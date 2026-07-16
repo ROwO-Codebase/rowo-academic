@@ -210,6 +210,26 @@ test("groups the signed-in course record by academic term", async () => {
   assert.match(styles, /\.course-term-heading/);
 });
 
+test("edits course status, term, and grade from an Overview dialog", async () => {
+  const [dashboard, updateRoute, styles] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/api/courses/[id]/route.ts"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(dashboard, /function EditCourseDialog/);
+  assert.match(dashboard, /<dialog/);
+  assert.match(dashboard, /<CourseStatusBadge status=\{course\.status\}/);
+  assert.doesNotMatch(dashboard, /id=\{"status-" \+ course\.id\}/);
+  assert.match(dashboard, /aria-label=\{"Edit " \+ course\.code\}/);
+  assert.match(dashboard, /status: CourseStatus; term: string \| null; grade: number \| null/);
+  assert.match(dashboard, /method: "PATCH"/);
+  assert.match(updateRoute, /eq\(courseRecords\.userId, session\.user\.localId\)/);
+  assert.match(updateRoute, /A grade can only be recorded for completed or transfer courses/);
+  assert.match(styles, /\.course-edit-dialog/);
+  assert.match(styles, /\.course-action-buttons/);
+});
+
 test("shows graded-only term averages with GPA equivalents in Overview", async () => {
   const [dashboard, grades, styles] = await Promise.all([
     source("app/app/AcademicDashboard.tsx"),

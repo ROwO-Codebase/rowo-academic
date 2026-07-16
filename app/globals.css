@@ -2046,8 +2046,14 @@ button {
 }
 
 .course-actions {
-  width: 56px;
+  width: 100px;
   text-align: right;
+}
+
+.course-action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .icon-button {
@@ -2075,6 +2081,17 @@ button {
   border-color: var(--rose-100);
   background: var(--rose-50);
   color: var(--rose-700);
+}
+
+.icon-button.edit {
+  color: var(--indigo-600);
+  font-size: 17px;
+}
+
+.icon-button.edit:hover:not(:disabled) {
+  border-color: var(--indigo-100);
+  background: var(--indigo-50);
+  color: var(--indigo-700);
 }
 
 .icon-button:disabled {
@@ -2110,6 +2127,59 @@ button {
 .course-planned {
   background: var(--slate-100);
   color: var(--slate-700);
+}
+
+.course-transfer {
+  background: var(--amber-100);
+  color: var(--amber-800);
+}
+
+.course-edit-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-md);
+  background: var(--white);
+  box-shadow: 0 28px 80px rgb(15 23 42 / 0.3);
+  color: var(--slate-900);
+}
+
+.course-edit-dialog::backdrop {
+  background: rgb(15 23 42 / 0.48);
+  backdrop-filter: blur(2px);
+}
+
+.course-edit-form {
+  margin: 0;
+}
+
+.course-edit-header {
+  display: flex;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--slate-200);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.course-edit-header span {
+  color: var(--indigo-600);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.course-edit-header h2 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.course-edit-body {
+  padding: 20px 22px 22px;
 }
 
 .eligibility-blocked {
@@ -3894,7 +3964,7 @@ button {
 
   .course-table tr {
     position: relative;
-    padding: 16px 60px 16px 18px;
+    padding: 16px 110px 16px 18px;
     border-top: 1px solid var(--slate-100);
   }
 
@@ -3939,10 +4009,6 @@ button {
     right: 12px;
     display: block;
     width: auto;
-  }
-
-  .course-table select {
-    width: min(100%, 180px);
   }
 
   .segmented-control {

@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -1196,6 +1197,184 @@ function EligibilityBadge({
   );
 }
 
+function CourseStatusBadge({ status }: { status: CourseStatus }) {
+  return (
+    <span className={"status-badge course-" + status}>
+      {courseStatusLabels[status]}
+    </span>
+  );
+}
+
+function EditCourseDialog({
+  course,
+  termOptions,
+  saving,
+  onClose,
+  onSave,
+}: {
+  course: DashboardCourse;
+  termOptions: string[];
+  saving: boolean;
+  onClose: () => void;
+  onSave: (patch: {
+    status: CourseStatus;
+    term: string | null;
+    grade: number | null;
+  }) => Promise<void>;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const termListId = useId();
+  const [status, setStatus] = useState<CourseStatus>(course.status);
+  const [term, setTerm] = useState(
+    course.term === "Unscheduled" ? "" : course.term,
+  );
+  const [grade, setGrade] = useState(
+    typeof course.grade === "number" ? String(course.grade) : "",
+  );
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  async function saveCourse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanTerm = term.trim();
+    if ((status === "planned" || status === "in_progress") && !cleanTerm) {
+      setFormError("Enter the term for this planned or in-progress course.");
+      return;
+    }
+    const numericGrade = grade.trim() === "" ? null : Number(grade);
+    if (
+      numericGrade !== null &&
+      (!Number.isFinite(numericGrade) || numericGrade < 0 || numericGrade > 100)
+    ) {
+      setFormError("Grade must be between 0 and 100.");
+      return;
+    }
+
+    setFormError("");
+    try {
+      await onSave({
+        status,
+        term: cleanTerm || null,
+        grade:
+          status === "completed" || status === "transfer"
+            ? numericGrade
+            : null,
+      });
+      onClose();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "The course could not be updated.",
+      );
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="course-edit-dialog"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onClose();
+      }}
+    >
+      <form className="course-edit-form" onSubmit={saveCourse}>
+        <div className="course-edit-header">
+          <div>
+            <span>Edit course record</span>
+            <h2 id={titleId}>{course.code} · {course.title}</h2>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close edit course dialog"
+            disabled={saving}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <div className="course-edit-body">
+          <div className="form-grid">
+            <label>
+              Status
+              <select
+                value={status}
+                onChange={(event) => {
+                  const nextStatus = event.target.value as CourseStatus;
+                  setStatus(nextStatus);
+                  if (nextStatus === "planned" || nextStatus === "in_progress") {
+                    setGrade("");
+                  }
+                }}
+              >
+                <option value="completed">Completed</option>
+                <option value="in_progress">In progress</option>
+                <option value="planned">Planned</option>
+                <option value="transfer">Transfer</option>
+              </select>
+            </label>
+            <label>
+              Term
+              <input
+                type="text"
+                list={termListId}
+                value={term}
+                onChange={(event) => setTerm(event.target.value)}
+                placeholder="2026-Fall"
+                autoComplete="off"
+              />
+              <datalist id={termListId}>
+                {termOptions.map((option) => (
+                  <option value={option} key={option} />
+                ))}
+              </datalist>
+            </label>
+            <label>
+              Grade <span>(optional)</span>
+              <div className="grade-field">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={grade}
+                  onChange={(event) => setGrade(event.target.value)}
+                  disabled={status !== "completed" && status !== "transfer"}
+                />
+                <span aria-hidden="true">%</span>
+              </div>
+            </label>
+          </div>
+          {formError && <p className="form-error" role="alert">{formError}</p>}
+          <div className="form-actions">
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button className="button button-primary" type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
 function OverviewPanel({
   dashboard,
   onOpenCatalog,
@@ -1211,6 +1390,7 @@ function OverviewPanel({
   setBusyCourseId: (id: string | null) => void;
   setNotice: (message: string) => void;
 }) {
+  const [editingCourse, setEditingCourse] = useState<DashboardCourse | null>(null);
   const summary = dashboard.summary;
   const completedPercent =
     summary &&
@@ -1247,28 +1427,28 @@ function OverviewPanel({
         average: weightedGradeAverage(courses),
       }));
   }, [dashboard.courses]);
+  const termOptions = useMemo(
+    () => Array.from(new Set([
+      ...dashboard.terms.map((term) => term.label),
+      ...dashboard.courses
+        .map((course) => course.term)
+        .filter((term) => term !== "Unscheduled"),
+    ])).sort((left, right) => termSequence(left) - termSequence(right)),
+    [dashboard.courses, dashboard.terms],
+  );
 
-  async function patchCourse(
+  async function updateCourse(
     course: DashboardCourse,
-    patch: Partial<Pick<DashboardCourse, "status" | "term">>,
+    patch: { status: CourseStatus; term: string | null; grade: number | null },
   ) {
     setBusyCourseId(course.id);
     try {
-      const requestPatch =
-        patch.status &&
-        (patch.status === "planned" || patch.status === "in_progress")
-          ? { ...patch, grade: null }
-          : patch;
       await requestJson<{ ok: true }>("/api/courses/" + encodeURIComponent(course.id), {
         method: "PATCH",
-        body: JSON.stringify(requestPatch),
+        body: JSON.stringify(patch),
       });
-      setNotice(course.code + " was updated.");
       await onReload();
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "The course could not be updated.",
-      );
+      setNotice(course.code + " was updated.");
     } finally {
       setBusyCourseId(null);
     }
@@ -1484,35 +1664,29 @@ function OverviewPanel({
                                 : "—"}
                             </td>
                             <td data-label="Status">
-                              <label className="sr-only" htmlFor={"status-" + course.id}>
-                                Status for {course.code}
-                              </label>
-                              <select
-                                id={"status-" + course.id}
-                                value={course.status}
-                                disabled={busyCourseId === course.id}
-                                onChange={(event) =>
-                                  void patchCourse(course, {
-                                    status: event.target.value as CourseStatus,
-                                  })
-                                }
-                              >
-                                <option value="completed">Completed</option>
-                                <option value="in_progress">In progress</option>
-                                <option value="planned">Planned</option>
-                                <option value="transfer">Transfer</option>
-                              </select>
+                              <CourseStatusBadge status={course.status} />
                             </td>
                             <td className="course-actions">
-                              <button
-                                className="icon-button danger"
-                                type="button"
-                                disabled={busyCourseId === course.id}
-                                aria-label={"Remove " + course.code}
-                                onClick={() => void removeCourse(course)}
-                              >
-                                ×
-                              </button>
+                              <div className="course-action-buttons">
+                                <button
+                                  className="icon-button edit"
+                                  type="button"
+                                  disabled={busyCourseId === course.id}
+                                  aria-label={"Edit " + course.code}
+                                  onClick={() => setEditingCourse(course)}
+                                >
+                                  <span aria-hidden="true">✎</span>
+                                </button>
+                                <button
+                                  className="icon-button danger"
+                                  type="button"
+                                  disabled={busyCourseId === course.id}
+                                  aria-label={"Remove " + course.code}
+                                  onClick={() => void removeCourse(course)}
+                                >
+                                  ×
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1525,6 +1699,15 @@ function OverviewPanel({
           </div>
         )}
       </section>
+      {editingCourse && (
+        <EditCourseDialog
+          course={editingCourse}
+          termOptions={termOptions}
+          saving={busyCourseId === editingCourse.id}
+          onClose={() => setEditingCourse(null)}
+          onSave={(patch) => updateCourse(editingCourse, patch)}
+        />
+      )}
     </div>
   );
 }

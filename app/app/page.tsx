@@ -9,6 +9,27 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function AcademicAppPage() {
-  return <AcademicDashboard />;
+type AcademicAppPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function firstParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+export default async function AcademicAppPage({ searchParams }: AcademicAppPageProps) {
+  const params = (await searchParams) ?? {};
+  const requestedTab = firstParam(params.tab);
+  const initialBrowserTab =
+    requestedTab === "courses" || requestedTab === "plans"
+      ? requestedTab
+      : null;
+  return (
+    <AcademicDashboard
+      initialBrowserTab={initialBrowserTab}
+      initialQuery={firstParam(params.q)}
+      initialCoursePid={firstParam(params.course)}
+      initialProgramPid={firstParam(params.plan)}
+    />
+  );
 }

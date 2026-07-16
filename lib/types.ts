@@ -237,6 +237,8 @@ export interface StudentCourseRecord {
 export interface StudentProgramRecord {
   programPid?: string | null;
   programCode?: string | null;
+  programTitle?: string | null;
+  programType?: string | null;
   status?: "active" | "completed" | "planned";
 }
 
@@ -254,6 +256,11 @@ export interface RequirementEvaluationOptions {
 export interface RequirementNodeEvaluation {
   nodeId: string | null;
   nodeType: string;
+  text: string | null;
+  logic: string | null;
+  minCount: number | null;
+  maxCount: number | null;
+  references: RequirementDisplayReference[];
   state: TriState;
   provisionalState?: TriState;
   reason: string;
@@ -261,6 +268,16 @@ export interface RequirementNodeEvaluation {
   unmetCourseCodes: string[];
   unknownReasons: string[];
   children: RequirementNodeEvaluation[];
+}
+
+export interface RequirementDisplayReference {
+  ordinal: number | null;
+  targetType: string;
+  targetPid: string | null;
+  targetCode: string | null;
+  targetTitle: string | null;
+  credits: string | number | null;
+  resolutionStatus: string | null;
 }
 
 export interface RequirementDocumentEvaluation {

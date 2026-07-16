@@ -1,6 +1,7 @@
 import type {
   CourseEligibilityResult,
   CourseRecommendation,
+  RequirementDisplayReference,
   RequirementDocument,
   RequirementDocumentEvaluation,
   RequirementEvaluationContext,
@@ -57,6 +58,8 @@ export function evaluateRequirementNode(
     const numeric = evaluateNumericConstraints(node, context);
     evaluation = result(node, numeric.state, numeric.reason);
   } else {
+    const inferredProgramRule = evaluateOpaqueProgramRule(node, context);
+    if (inferredProgramRule) return inferredProgramRule;
     const childEvaluations = children.map((child) =>
       evaluateRequirementNode(child, context, options));
     evaluation = result(
@@ -407,6 +410,38 @@ function evaluateProgramNode(
     : "Program enrolment check completed.");
 }
 
+function evaluateOpaqueProgramRule(
+  node: RequirementNode,
+  context: RequirementEvaluationContext,
+): RequirementNodeEvaluation | null {
+  if (node.node_type !== "opaque" || typeof node.text !== "string") return null;
+  const match = node.text.trim().match(
+    /^Enrolled in\s+(?:an?\s+)?(.+?)\s+program[.:]?$/i,
+  );
+  if (!match) return null;
+
+  const requiredWords = normalizedWords(match[1]).filter(
+    (word) => !["a", "an", "the", "program"].includes(word),
+  );
+  if (requiredWords.length === 0) return null;
+  const found = (context.programs ?? []).some((program) => {
+    if (program.status === "planned") return false;
+    const searchable = normalizedWords([
+      program.programCode,
+      program.programTitle,
+      program.programType,
+    ].filter(Boolean).join(" "));
+    return requiredWords.every((word) => searchable.includes(word));
+  });
+  return result(
+    node,
+    found ? MET : NOT_MET,
+    found
+      ? `A tracked program matches “${match[1].trim()}”.`
+      : `No tracked program matches “${match[1].trim()}”.`,
+  );
+}
+
 function evaluateNumericConstraints(
   node: RequirementNode,
   context: RequirementEvaluationContext,
@@ -626,6 +661,11 @@ function result(
   return {
     nodeId: stringOrNull(node.node_id),
     nodeType: String(node.node_type || "unknown"),
+    text: stringOrNull(node.text),
+    logic: stringOrNull(node.logic ?? node.operator),
+    minCount: numberOrNull(node.min_count),
+    maxCount: numberOrNull(node.max_count),
+    references: displayReferences(node),
     state,
     reason,
     matchedCourseCodes: unique(children.flatMap((child) => child.matchedCourseCodes)),
@@ -636,6 +676,21 @@ function result(
     ]),
     children,
   };
+}
+
+function displayReferences(node: RequirementNode): RequirementDisplayReference[] {
+  return referencesOf(node).map((reference) => ({
+    ordinal: numberOrNull(reference.ordinal),
+    targetType: String(reference.target_type ?? "unknown"),
+    targetPid: stringOrNull(reference.target_pid),
+    targetCode: stringOrNull(reference.target_code),
+    targetTitle: stringOrNull(reference.target_title),
+    credits:
+      typeof reference.credits === "number"
+        ? reference.credits
+        : stringOrNull(reference.credits ?? reference.displayed_credits),
+    resolutionStatus: stringOrNull(reference.resolution_status),
+  }));
 }
 
 function isUncertain(node: RequirementNode): boolean {
@@ -694,6 +749,15 @@ function constraintKind(constraint: RequirementNumericConstraint): string {
 function numberOrNull(value: unknown): number | null {
   const result = Number(value);
   return value == null || !Number.isFinite(result) ? null : result;
+}
+
+function normalizedWords(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
 function numericValue(value: unknown): number | null {

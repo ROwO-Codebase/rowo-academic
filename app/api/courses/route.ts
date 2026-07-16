@@ -292,6 +292,8 @@ export async function POST(request: Request) {
           .map((program) => ({
             programPid: program.programPid,
             programCode: program.programCode,
+            programTitle: program.programName,
+            programType: program.programType,
             status: "active" as const,
           })),
       });

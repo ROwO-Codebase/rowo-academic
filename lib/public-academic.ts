@@ -1,8 +1,25 @@
-import type { RequirementDocument, RequirementNode } from "./types";
+import type {
+  RequirementDisplayReference,
+  RequirementDocument,
+  RequirementNode,
+  RequirementReference,
+} from "./types";
 
 const MAX_REQUIREMENT_TEXT = 4_000;
 const MAX_REQUIREMENT_NODES = 2_000;
 const MAX_COURSE_CODES = 100;
+const MAX_REQUIREMENT_REFERENCES = 500;
+
+export interface PublicRequirementNode {
+  nodeId: string | null;
+  nodeType: string;
+  text: string | null;
+  logic: string | null;
+  minCount: number | null;
+  maxCount: number | null;
+  references: RequirementDisplayReference[];
+  children: PublicRequirementNode[];
+}
 
 export interface PublicRequirementSummary {
   id: string;
@@ -12,6 +29,7 @@ export interface PublicRequirementSummary {
   evaluability: string;
   description: string | null;
   courseCodes: string[];
+  root: PublicRequirementNode | null;
   warnings: string[];
 }
 
@@ -20,37 +38,13 @@ export function summarizePublicRequirement(
   document: RequirementDocument,
 ): PublicRequirementSummary {
   const courseCodes = new Set<string>();
-  const nodeText: string[] = [];
-  const stack: RequirementNode[] = document.ast.root ? [document.ast.root] : [];
-  let visited = 0;
-
-  while (stack.length > 0 && visited < MAX_REQUIREMENT_NODES) {
-    const node = stack.pop();
-    if (!node) continue;
-    visited += 1;
-
-    if (typeof node.text === "string" && node.text.trim()) {
-      nodeText.push(node.text.trim());
-    }
-    for (const constraint of node.numeric_constraints ?? []) {
-      if (typeof constraint.raw_text === "string" && constraint.raw_text.trim()) {
-        nodeText.push(constraint.raw_text.trim());
-      }
-    }
-    for (const reference of [...(node.refs ?? []), ...(node.references ?? [])]) {
-      if (courseCodes.size >= MAX_COURSE_CODES) break;
-      const code =
-        typeof reference.target_code === "string"
-          ? reference.target_code.trim().replace(/\s+/g, " ")
-          : "";
-      if (code && code.length <= 32) courseCodes.add(code);
-    }
-    for (const child of node.children ?? []) stack.push(child);
-  }
+  const budget = { nodes: 0, references: 0, text: 0 };
+  const root = document.ast.root
+    ? summarizeRequirementNode(document.ast.root, courseCodes, budget)
+    : null;
 
   const sourceText = academicHtmlToText(document.sourceHtml ?? "");
-  const fallbackText = nodeText.join(" ").replace(/\s+/g, " ").trim();
-  const description = (sourceText || fallbackText).slice(0, MAX_REQUIREMENT_TEXT);
+  const description = root ? "" : sourceText.slice(0, MAX_REQUIREMENT_TEXT);
 
   return {
     id: document.documentId,
@@ -60,11 +54,96 @@ export function summarizePublicRequirement(
     evaluability: document.evaluability,
     description: description || null,
     courseCodes: [...courseCodes].sort(),
+    root,
     warnings: document.warnings
       .filter((warning): warning is string => typeof warning === "string")
       .map((warning) => warning.slice(0, 240))
       .slice(0, 5),
   };
+}
+
+function summarizeRequirementNode(
+  node: RequirementNode,
+  courseCodes: Set<string>,
+  budget: { nodes: number; references: number; text: number },
+): PublicRequirementNode | null {
+  if (budget.nodes >= MAX_REQUIREMENT_NODES) return null;
+  budget.nodes += 1;
+
+  const references = requirementReferences(node)
+    .map((reference) => summarizeReference(reference, courseCodes, budget))
+    .filter((reference): reference is RequirementDisplayReference => Boolean(reference));
+  const children: PublicRequirementNode[] = [];
+  for (const child of node.children ?? []) {
+    const summarized = summarizeRequirementNode(child, courseCodes, budget);
+    if (summarized) children.push(summarized);
+  }
+
+  return {
+    nodeId: cleanString(node.node_id, 160),
+    nodeType: cleanString(node.node_type, 80) ?? "unknown",
+    text: boundedText(node.text, budget),
+    logic: cleanString(node.logic ?? node.operator, 40),
+    minCount: finiteNumber(node.min_count),
+    maxCount: finiteNumber(node.max_count),
+    references,
+    children,
+  };
+}
+
+function summarizeReference(
+  reference: RequirementReference,
+  courseCodes: Set<string>,
+  budget: { references: number },
+): RequirementDisplayReference | null {
+  if (budget.references >= MAX_REQUIREMENT_REFERENCES) return null;
+  budget.references += 1;
+  const targetType = cleanString(reference.target_type, 40) ?? "unknown";
+  const targetCode = cleanString(reference.target_code, 128);
+  if (targetType === "course" && targetCode && courseCodes.size < MAX_COURSE_CODES) {
+    courseCodes.add(targetCode);
+  }
+  return {
+    ordinal: finiteNumber(reference.ordinal),
+    targetType,
+    targetPid: cleanString(reference.target_pid, 160),
+    targetCode,
+    targetTitle: cleanString(reference.target_title, 320),
+    credits:
+      typeof reference.credits === "number"
+        ? reference.credits
+        : cleanString(reference.credits ?? reference.displayed_credits, 32),
+    resolutionStatus: cleanString(reference.resolution_status, 40),
+  };
+}
+
+function requirementReferences(node: RequirementNode): RequirementReference[] {
+  if (Array.isArray(node.refs)) return node.refs;
+  if (Array.isArray(node.references)) return node.references;
+  return [];
+}
+
+function boundedText(
+  value: unknown,
+  budget: { text: number },
+): string | null {
+  const clean = cleanString(value, MAX_REQUIREMENT_TEXT);
+  if (!clean || budget.text >= MAX_REQUIREMENT_TEXT) return null;
+  const available = MAX_REQUIREMENT_TEXT - budget.text;
+  const result = clean.slice(0, available);
+  budget.text += result.length;
+  return result;
+}
+
+function cleanString(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean ? clean.slice(0, maxLength) : null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  const number = Number(value);
+  return value == null || !Number.isFinite(number) ? null : number;
 }
 
 function academicHtmlToText(html: string): string {

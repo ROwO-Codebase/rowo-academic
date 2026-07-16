@@ -312,3 +312,76 @@ test("legacy code-only evidence matches only when no conflicting PID exists", ()
   assert.equal(codeOnly.state, "MET");
   assert.equal(conflicting.state, "NOT_MET");
 });
+
+test("evaluates and preserves the real cascaded course-and-program AST shape", () => {
+  const courseChoice = node("course_completed", {
+    text: "Must have completed at least 1 of the following:",
+    logic: "at_least",
+    min_count: 1,
+    refs: [
+      reference("CS 231", { target_title: "Algorithmic Problem Solving", credits: "0.50" }),
+      reference("CS 234", { target_title: "Data Types and Structures", credits: "0.50" }),
+      reference("CS 240", { target_title: "Data Structures and Data Management", credits: "0.50" }),
+      reference("CS 240E", {
+        target_title: "Data Structures and Data Management (Enriched)",
+        credits: "0.50",
+      }),
+    ],
+  });
+  const mathematicsProgram = node("opaque", {
+    text: "Enrolled in an Honours Mathematics program",
+  });
+  const root = node("root", {
+    logic: "all",
+    children: [
+      node("group", {
+        text: "Complete all of the following",
+        logic: "all",
+        children: [courseChoice, mathematicsProgram],
+      }),
+    ],
+  });
+  const withProgram = evaluateRequirementDocuments(
+    [document(root)],
+    context(
+      [
+        {
+          coursePid: "cs234-pid",
+          courseCode: "CS 234",
+          status: "completed",
+          credits: 0.5,
+        },
+      ],
+      {
+        programs: [
+          {
+            programTitle: "Computer Science (Bachelor of Mathematics - Honours)",
+            programCode: "H-Computer Science (BMath)",
+            status: "active",
+          },
+        ],
+      },
+    ),
+  );
+
+  assert.equal(withProgram.state, "MET");
+  const evaluatedGroup = withProgram.documents[0].root.children[0];
+  assert.equal(evaluatedGroup.text, "Complete all of the following");
+  assert.equal(evaluatedGroup.children[0].logic, "at_least");
+  assert.equal(evaluatedGroup.children[0].minCount, 1);
+  assert.equal(evaluatedGroup.children[0].references[1].targetCode, "CS 234");
+  assert.equal(evaluatedGroup.children[1].state, "MET");
+
+  const withoutProgram = evaluateRequirementDocuments(
+    [document(root)],
+    context([
+      {
+        coursePid: "cs234-pid",
+        courseCode: "CS 234",
+        status: "completed",
+        credits: 0.5,
+      },
+    ]),
+  );
+  assert.equal(withoutProgram.state, "NOT_MET");
+});

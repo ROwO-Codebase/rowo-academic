@@ -15,6 +15,10 @@ import type {
 import type { PublicRequirementSummary } from "@/lib/public-academic";
 import { isNonAcademicCourseCode } from "@/lib/course-records";
 import { Brand } from "./Brand";
+import {
+  RequirementTree,
+  type RequirementTreeNodeData,
+} from "./RequirementTree";
 
 type GuestTab = "plans" | "courses";
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -56,6 +60,10 @@ interface CourseEligibilityPayload {
   needsReview: boolean;
   unmetCourseCodes: string[];
   unknownReasons: string[];
+  documents: Array<{
+    documentId: string;
+    root: RequirementTreeNodeData | null;
+  }>;
 }
 
 interface CourseMutationPayload {
@@ -105,6 +113,14 @@ function readableLabel(value: string): string {
   return text
     ? text.charAt(0).toUpperCase() + text.slice(1)
     : "Calendar requirement";
+}
+
+function updateAcademicDetailUrl(tab: GuestTab, pid: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("tab", tab);
+  url.searchParams.set(tab === "plans" ? "plan" : "course", pid);
+  url.searchParams.delete(tab === "plans" ? "course" : "plan");
+  window.history.replaceState(null, "", url);
 }
 
 function GuestTabs({
@@ -185,9 +201,14 @@ function GuestNotice() {
 function RequirementInformation({
   requirements,
   emptyMessage,
+  evaluations = [],
 }: {
   requirements: PublicRequirementSummary[];
   emptyMessage: string;
+  evaluations?: Array<{
+    documentId: string;
+    root: RequirementTreeNodeData | null;
+  }>;
 }) {
   if (requirements.length === 0) {
     return <div className="inline-empty">{emptyMessage}</div>;
@@ -211,13 +232,17 @@ function RequirementInformation({
             </span>
           </summary>
           <div className="guest-requirement-body">
-            {requirement.description && <p>{requirement.description}</p>}
-            {requirement.courseCodes.length > 0 && (
-              <div className="course-code-list" aria-label="Referenced courses">
-                {requirement.courseCodes.map((code) => (
-                  <span key={code}>{code}</span>
-                ))}
-              </div>
+            {requirement.root ? (
+              <RequirementTree
+                root={requirement.root}
+                evaluation={
+                  evaluations.find((item) => item.documentId === requirement.id)?.root
+                }
+              />
+            ) : requirement.description ? (
+              <p>{requirement.description}</p>
+            ) : (
+              <p>No machine-readable requirement tree is available.</p>
             )}
             {requirement.warnings.length > 0 && (
               <p className="guest-requirement-warning">
@@ -233,23 +258,29 @@ function RequirementInformation({
 
 function PlanExplorer({
   signedIn = false,
+  initialQuery = "",
+  initialPid = "",
   savedProgramCodes = [],
   onAdded,
   setNotice,
 }: {
   signedIn?: boolean;
+  initialQuery?: string;
+  initialPid?: string;
   savedProgramCodes?: string[];
   onAdded?: () => Promise<void>;
   setNotice?: (message: string) => void;
 }) {
   const searchId = useId();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<AcademicProgram[]>([]);
   const [catalog, setCatalog] = useState<CatalogMetadata | null>(null);
   const [searchState, setSearchState] = useState<LoadState>("idle");
   const [searchError, setSearchError] = useState("");
   const [detail, setDetail] = useState<ProgramDetailPayload | null>(null);
-  const [detailState, setDetailState] = useState<LoadState>("idle");
+  const [detailState, setDetailState] = useState<LoadState>(
+    initialPid ? "loading" : "idle",
+  );
   const [detailError, setDetailError] = useState("");
   const [savingProgramPid, setSavingProgramPid] = useState<string | null>(null);
   const [addError, setAddError] = useState("");
@@ -293,13 +324,13 @@ function PlanExplorer({
     };
   }, [query, searchPrograms]);
 
-  async function openProgram(program: AcademicProgram) {
+  const loadProgram = useCallback(async (pid: string) => {
     setDetailState("loading");
     setDetailError("");
     setAddError("");
     try {
       const payload = await requestBrowserJson<ProgramDetailPayload>(
-        "/api/catalog/programs/" + encodeURIComponent(program.pid),
+        "/api/catalog/programs/" + encodeURIComponent(pid),
       );
       setDetail(payload);
       setDetailState("ready");
@@ -307,6 +338,28 @@ function PlanExplorer({
       setDetailError(error instanceof Error ? error.message : "The plan could not be loaded.");
       setDetailState("error");
     }
+  }, []);
+
+  useEffect(() => {
+    if (!initialPid) return;
+    const controller = new AbortController();
+    void requestBrowserJson<ProgramDetailPayload>(
+      "/api/catalog/programs/" + encodeURIComponent(initialPid),
+      { signal: controller.signal },
+    ).then((payload) => {
+      setDetail(payload);
+      setDetailState("ready");
+    }).catch((error) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setDetailError(error instanceof Error ? error.message : "The plan could not be loaded.");
+      setDetailState("error");
+    });
+    return () => controller.abort();
+  }, [initialPid]);
+
+  function openProgram(program: AcademicProgram) {
+    updateAcademicDetailUrl("plans", program.pid);
+    void loadProgram(program.pid);
   }
 
   async function addPlan(program: AcademicProgram) {
@@ -555,6 +608,7 @@ function CourseEligibilitySummary({
 function CourseExplorer({
   signedIn = false,
   initialQuery = "",
+  initialPid = "",
   initialTerm = "",
   initialStatus = "completed",
   termOptions = [],
@@ -563,6 +617,7 @@ function CourseExplorer({
 }: {
   signedIn?: boolean;
   initialQuery?: string;
+  initialPid?: string;
   initialTerm?: string;
   initialStatus?: CourseStatus;
   termOptions?: string[];
@@ -576,7 +631,9 @@ function CourseExplorer({
   const [searchState, setSearchState] = useState<LoadState>("idle");
   const [searchError, setSearchError] = useState("");
   const [detail, setDetail] = useState<CourseDetailPayload | null>(null);
-  const [detailState, setDetailState] = useState<LoadState>("idle");
+  const [detailState, setDetailState] = useState<LoadState>(
+    initialPid ? "loading" : "idle",
+  );
   const [detailError, setDetailError] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [status, setStatus] = useState<CourseStatus>(initialStatus);
@@ -622,7 +679,7 @@ function CourseExplorer({
     };
   }, [query, searchCourses]);
 
-  async function openCourse(course: AcademicCourse) {
+  const loadCourse = useCallback(async (pid: string) => {
     setDetailState("loading");
     setDetailError("");
     setShowAddForm(false);
@@ -632,7 +689,7 @@ function CourseExplorer({
     setFormError("");
     try {
       const payload = await requestBrowserJson<CourseDetailPayload>(
-        "/api/catalog/courses/" + encodeURIComponent(course.pid),
+        "/api/catalog/courses/" + encodeURIComponent(pid),
       );
       setDetail(payload);
       setDetailState("ready");
@@ -640,6 +697,28 @@ function CourseExplorer({
       setDetailError(error instanceof Error ? error.message : "The course could not be loaded.");
       setDetailState("error");
     }
+  }, [initialStatus, initialTerm]);
+
+  useEffect(() => {
+    if (!initialPid) return;
+    const controller = new AbortController();
+    void requestBrowserJson<CourseDetailPayload>(
+      "/api/catalog/courses/" + encodeURIComponent(initialPid),
+      { signal: controller.signal },
+    ).then((payload) => {
+      setDetail(payload);
+      setDetailState("ready");
+    }).catch((error) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setDetailError(error instanceof Error ? error.message : "The course could not be loaded.");
+      setDetailState("error");
+    });
+    return () => controller.abort();
+  }, [initialPid]);
+
+  function openCourse(course: AcademicCourse) {
+    updateAcademicDetailUrl("courses", course.pid);
+    void loadCourse(course.pid);
   }
 
   async function addCourse(event: FormEvent<HTMLFormElement>) {
@@ -897,6 +976,7 @@ function CourseExplorer({
               <RequirementInformation
                 requirements={detail.requirements}
                 emptyMessage="The calendar does not list prerequisite, corequisite, or antirequisite information for this course."
+                evaluations={detail.eligibility?.documents}
               />
             </>
           )}
@@ -909,6 +989,9 @@ function CourseExplorer({
 export function SignedInAcademicBrowser({
   dashboard,
   initialQuery,
+  initialBrowserTab,
+  initialCoursePid,
+  initialProgramPid,
   initialTerm,
   initialStatus,
   onAdded,
@@ -920,12 +1003,15 @@ export function SignedInAcademicBrowser({
     programs?: Array<{ profile: { programCode: string } }>;
   };
   initialQuery: string;
+  initialBrowserTab: GuestTab;
+  initialCoursePid: string;
+  initialProgramPid: string;
   initialTerm: string;
   initialStatus: CourseStatus;
   onAdded: () => Promise<void>;
   setNotice: (message: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<GuestTab>("courses");
+  const [activeTab, setActiveTab] = useState<GuestTab>(initialBrowserTab);
   const termOptions = Array.from(
     new Set([
       ...dashboard.terms.map((term) => term.label),
@@ -964,6 +1050,8 @@ export function SignedInAcademicBrowser({
       {activeTab === "plans" ? (
         <PlanExplorer
           signedIn
+          initialQuery={initialQuery}
+          initialPid={initialProgramPid}
           savedProgramCodes={dashboard.programs?.map((program) => program.profile.programCode)}
           onAdded={onAdded}
           setNotice={setNotice}
@@ -972,6 +1060,7 @@ export function SignedInAcademicBrowser({
         <CourseExplorer
           signedIn
           initialQuery={initialQuery}
+          initialPid={initialCoursePid}
           initialTerm={initialTerm}
           initialStatus={initialStatus}
           termOptions={termOptions}
@@ -983,8 +1072,18 @@ export function SignedInAcademicBrowser({
   );
 }
 
-export function GuestAcademicExplorer() {
-  const [activeTab, setActiveTab] = useState<GuestTab>("plans");
+export function GuestAcademicExplorer({
+  initialTab = "plans",
+  initialQuery = "",
+  initialCoursePid = "",
+  initialProgramPid = "",
+}: {
+  initialTab?: GuestTab;
+  initialQuery?: string;
+  initialCoursePid?: string;
+  initialProgramPid?: string;
+}) {
+  const [activeTab, setActiveTab] = useState<GuestTab>(initialTab);
 
   function changeTab(tab: GuestTab) {
     setActiveTab(tab);
@@ -1001,7 +1100,11 @@ export function GuestAcademicExplorer() {
       <GuestHeader activeTab={activeTab} onTabChange={changeTab} />
       <main id="main-content" className="dashboard-main shell" tabIndex={-1}>
         <GuestNotice />
-        {activeTab === "plans" ? <PlanExplorer /> : <CourseExplorer />}
+        {activeTab === "plans" ? (
+          <PlanExplorer initialQuery={initialQuery} initialPid={initialProgramPid} />
+        ) : (
+          <CourseExplorer initialQuery={initialQuery} initialPid={initialCoursePid} />
+        )}
       </main>
       <GuestTabs
         activeTab={activeTab}

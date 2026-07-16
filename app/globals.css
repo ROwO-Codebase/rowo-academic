@@ -1491,6 +1491,107 @@ button {
   white-space: pre-line;
 }
 
+.requirement-tree {
+  margin-top: 13px;
+  color: var(--slate-700);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.requirement-child-list,
+.requirement-reference-list {
+  margin: 8px 0 0;
+  padding: 0 0 0 20px;
+  list-style: none;
+}
+
+.requirement-child-list:not(.root-children) {
+  border-left: 1px solid var(--slate-200);
+}
+
+.requirement-child-list > li,
+.requirement-reference-list > li {
+  position: relative;
+  margin-top: 7px;
+}
+
+.requirement-child-list:not(.root-children) > li::before,
+.requirement-reference-list > li::before {
+  position: absolute;
+  top: 0.68em;
+  left: -15px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--slate-300);
+  content: "";
+}
+
+.requirement-child-list.root-children {
+  margin: 0;
+  padding: 0;
+}
+
+.requirement-node-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--slate-700);
+  font-weight: 720;
+}
+
+.requirement-node-state {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border-radius: 50%;
+  place-items: center;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.requirement-node-state.state-met {
+  background: var(--emerald-100);
+  color: var(--emerald-700);
+}
+
+.requirement-node-state.state-not_met {
+  background: var(--rose-100);
+  color: var(--rose-700);
+}
+
+.requirement-node-state.state-unknown {
+  background: var(--amber-100);
+  color: var(--amber-800);
+}
+
+.requirement-reference-link,
+.requirement-inferred-link {
+  color: var(--indigo-700);
+  text-decoration: none;
+}
+
+.requirement-reference-link:hover,
+.requirement-inferred-link:hover {
+  text-decoration: underline;
+}
+
+.requirement-reference-link strong {
+  color: inherit;
+}
+
+.requirement-reference-link small {
+  display: block;
+  margin-top: 1px;
+  color: var(--slate-400);
+  font-size: 9px;
+}
+
+.requirement-reference-link.unresolved {
+  color: var(--slate-600);
+}
+
 .course-code-list {
   display: flex;
   margin-top: 12px;
@@ -2191,6 +2292,18 @@ button {
   background: var(--amber-50);
   color: var(--amber-800);
   font-size: 11px;
+}
+
+.requirement-ast {
+  margin: 17px 0 0 49px;
+  padding: 13px 14px;
+  border: 1px solid var(--slate-100);
+  border-radius: 10px;
+  background: var(--slate-50);
+}
+
+.requirement-ast .requirement-tree {
+  margin-top: 0;
 }
 
 .requirement-details {
@@ -3795,6 +3908,7 @@ button {
   }
 
   .requirement-note,
+  .requirement-ast,
   .requirement-details {
     margin-left: 47px;
   }

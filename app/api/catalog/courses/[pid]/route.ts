@@ -92,6 +92,8 @@ export async function GET(request: Request, context: RouteContext) {
           .map((program) => ({
             programPid: program.programPid,
             programCode: program.programCode,
+            programTitle: program.programName,
+            programType: program.programType,
             status: "active" as const,
           })),
       });

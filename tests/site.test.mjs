@@ -108,6 +108,26 @@ test("gives signed-in users an account-aware program and course browser", async 
   assert.match(courseDetail, /recordedCount/);
 });
 
+test("renders actual requirement AST nodes as cascaded linked detail trees", async () => {
+  const [summary, tree, browser, dashboard, styles] = await Promise.all([
+    source("lib/public-academic.ts"),
+    source("components/RequirementTree.tsx"),
+    source("components/GuestAcademicExplorer.tsx"),
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(summary, /summarizeRequirementNode/);
+  assert.match(summary, /references:/);
+  assert.match(tree, /requirement-child-list/);
+  assert.match(tree, /tab=courses&course=/);
+  assert.match(tree, /tab=plans&plan=/);
+  assert.match(browser, /<RequirementTree/);
+  assert.match(browser, /initialPid/);
+  assert.match(dashboard, /requirement\.root/);
+  assert.match(styles, /\.requirement-reference-list/);
+});
+
 test("tracks multiple plans against one course record and prioritizes overlap", async () => {
   const [browser, dashboardUi, dashboardRoute, programRoute, programDeleteRoute, schema] =
     await Promise.all([

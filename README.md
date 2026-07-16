@@ -23,6 +23,9 @@ highlights that overlap. A course detail page evaluates its parsed requirements
 against courses and programs already saved to the student's account, clearly
 marks requirements as satisfied, not yet satisfied, or needing review, and can
 add that course to the student's record without leaving the detail page.
+Course and plan checks evaluate the serialized requirement AST from
+`ACADEMIC_DB`; the browser preserves its nested groups and links resolved course
+and program references to their catalog detail views.
 Courses whose codes start with `COOP` or `PD` remain visible as non-academic
 requirements, but contribute zero academic units to completed, planned, and
 projected totals.

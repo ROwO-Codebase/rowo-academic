@@ -19,6 +19,10 @@ import {
   GuestAcademicExplorer,
   SignedInAcademicBrowser as CatalogPanel,
 } from "../../components/GuestAcademicExplorer";
+import {
+  RequirementTree,
+  type RequirementTreeNodeData,
+} from "../../components/RequirementTree";
 
 type TabId = "overview" | "progress" | "planner" | "catalog";
 type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
@@ -77,6 +81,7 @@ interface DashboardRequirement {
   missing?: string[];
   note?: string | null;
   sourceLabel?: string | null;
+  root?: RequirementTreeNodeData | null;
 }
 
 interface DashboardProgramProgress {
@@ -193,12 +198,13 @@ interface ApiCourseRecord {
   credits: number | null;
 }
 
-interface ApiRequirementNodeEvaluation {
+interface ApiRequirementNodeEvaluation extends RequirementTreeNodeData {
   state: "MET" | "NOT_MET" | "UNKNOWN";
   reason: string;
   matchedCourseCodes: string[];
   unmetCourseCodes: string[];
   unknownReasons: string[];
+  children: ApiRequirementNodeEvaluation[];
 }
 
 interface ApiRequirementDocumentEvaluation {
@@ -473,6 +479,7 @@ function normalizeRequirements(
         readableRequirementName(document.sourceField) +
         " · " +
         document.parseStatus,
+      root: document.root,
     };
   });
 }
@@ -1527,6 +1534,12 @@ function RequirementCard({
         <p className="requirement-note">{requirement.note}</p>
       )}
 
+      {requirement.root && (
+        <div className="requirement-ast">
+          <RequirementTree root={requirement.root} />
+        </div>
+      )}
+
       <details className="requirement-details">
         <summary>Why this status</summary>
         <div>
@@ -2363,8 +2376,20 @@ function LegacyCatalogPanel({
 
 void LegacyCatalogPanel;
 
-export function AcademicDashboard() {
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+export function AcademicDashboard({
+  initialBrowserTab = null,
+  initialQuery = "",
+  initialCoursePid = "",
+  initialProgramPid = "",
+}: {
+  initialBrowserTab?: "plans" | "courses" | null;
+  initialQuery?: string;
+  initialCoursePid?: string;
+  initialProgramPid?: string;
+}) {
+  const [activeTab, setActiveTab] = useState<TabId>(
+    initialBrowserTab ? "catalog" : "overview",
+  );
   const [loadState, setLoadState] = useState<
     "loading" | "ready" | "error" | "guest"
   >("loading");
@@ -2372,7 +2397,7 @@ export function AcademicDashboard() {
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyCourseId, setBusyCourseId] = useState<string | null>(null);
-  const [catalogInitialQuery, setCatalogInitialQuery] = useState("");
+  const [catalogInitialQuery, setCatalogInitialQuery] = useState(initialQuery);
   const [catalogInitialTerm, setCatalogInitialTerm] = useState("");
   const [catalogInitialStatus, setCatalogInitialStatus] =
     useState<CourseStatus>("completed");
@@ -2430,7 +2455,14 @@ export function AcademicDashboard() {
     Boolean(dashboard && dashboard.profile && !dashboard.calendarMismatch);
 
   if (loadState === "guest") {
-    return <GuestAcademicExplorer />;
+    return (
+      <GuestAcademicExplorer
+        initialTab={initialBrowserTab ?? "plans"}
+        initialQuery={initialQuery}
+        initialCoursePid={initialCoursePid}
+        initialProgramPid={initialProgramPid}
+      />
+    );
   }
 
   return (
@@ -2528,6 +2560,9 @@ export function AcademicDashboard() {
                 }
                 dashboard={dashboard}
                 initialQuery={catalogInitialQuery}
+                initialBrowserTab={initialBrowserTab ?? "courses"}
+                initialCoursePid={initialCoursePid}
+                initialProgramPid={initialProgramPid}
                 initialTerm={catalogInitialTerm}
                 initialStatus={catalogInitialStatus}
                 onAdded={loadDashboard}

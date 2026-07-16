@@ -132,53 +132,124 @@ export async function GET(request: Request) {
       programRows.find((program) => program.isPrimary) ?? programRows[0] ?? null;
     const academicEnv = env as unknown as AcademicEnvironment;
     const calendar = await getCatalogMetadata(academicEnv);
-    const calendarMismatch = Boolean(
-      selectedProgram && selectedProgram.catalogId !== calendar.catalogId,
+    const evaluationCourses = records.map(toEvaluationCourse);
+    const evaluationPrograms = programRows
+      .filter((program) => program.catalogId === calendar.catalogId)
+      .map((program) => ({
+        programPid: program.programPid,
+        programCode: program.programCode,
+        status: "active" as const,
+      }));
+    const sharedCompletedUnits = completedUnits(records);
+    const programProgress = await Promise.all(
+      programRows.map(async (savedProgram) => {
+        const calendarMismatch = savedProgram.catalogId !== calendar.catalogId;
+        if (calendarMismatch) {
+          return {
+            saved: publicProgram(savedProgram),
+            catalog: null,
+            calendarMismatch: true,
+            requirementAnalysis: null,
+            recommendations: [],
+          };
+        }
+
+        const [program, documents] = await Promise.all([
+          getProgramByPid(academicEnv, savedProgram.programPid),
+          getProgramRequirementDocuments(academicEnv, savedProgram.programPid),
+        ]);
+        const context: RequirementEvaluationContext = {
+          courses: evaluationCourses,
+          programs: evaluationPrograms,
+          completedUnits: sharedCompletedUnits,
+        };
+        const requirementAnalysis = evaluateRequirementDocuments(documents, context);
+        const unmetCodes = new Set(collectUnmetCourseCodes(requirementAnalysis));
+        const documentStates = new Map(
+          requirementAnalysis.documents.map((document) => [
+            document.documentId,
+            document.state,
+          ]),
+        );
+        const recommendations = extractCourseRecommendations(documents, context)
+          .filter(
+            (reference) =>
+              unmetCodes.has(reference.courseCode) &&
+              documentStates.get(reference.documentId) !== "MET",
+          )
+          .slice(0, MAX_RECOMMENDATIONS);
+
+        return {
+          saved: publicProgram(savedProgram),
+          catalog: program,
+          calendarMismatch: false,
+          requirementAnalysis,
+          recommendations,
+        };
+      }),
     );
 
-    let catalogProgram = null;
-    let requirementAnalysis = null;
-    let recommendations: Array<Record<string, unknown>> = [];
-    if (selectedProgram && !calendarMismatch) {
-      const [program, documents] = await Promise.all([
-        getProgramByPid(academicEnv, selectedProgram.programPid),
-        getProgramRequirementDocuments(academicEnv, selectedProgram.programPid),
-      ]);
-      catalogProgram = program;
-      const context: RequirementEvaluationContext = {
-        courses: records.map(toEvaluationCourse),
-        programs: [
-          {
-            programPid: program?.pid ?? null,
-            programCode: selectedProgram.programCode,
-            status: "active",
-          },
-        ],
-        completedUnits: completedUnits(records),
-      };
-      requirementAnalysis = evaluateRequirementDocuments(documents, context);
-
-      const unmetCodes = new Set(collectUnmetCourseCodes(requirementAnalysis));
-      const documentStates = new Map(
-        requirementAnalysis.documents.map((document) => [
-          document.documentId,
-          document.state,
-        ]),
-      );
-      const references = extractCourseRecommendations(documents, context)
-        .filter(
-          (reference) =>
-            unmetCodes.has(reference.courseCode) &&
-            documentStates.get(reference.documentId) !== "MET",
-        )
-        .slice(0, MAX_RECOMMENDATIONS);
-      recommendations = await Promise.all(
-        references.map(async (reference) => ({
-          ...reference,
-          course: await getCourseByCode(academicEnv, reference.courseCode),
-        })),
-      );
+    const recommendationMap = new Map<
+      string,
+      {
+        courseCode: string;
+        reason: string;
+        isOption: boolean;
+        programs: Array<{
+          programId: string;
+          programCode: string;
+          programName: string;
+          reason: string;
+        }>;
+      }
+    >();
+    for (const progress of programProgress) {
+      if (!progress.saved) continue;
+      for (const reference of progress.recommendations) {
+        const current = recommendationMap.get(reference.courseCode) ?? {
+          courseCode: reference.courseCode,
+          reason: reference.reason,
+          isOption: reference.isOption,
+          programs: [],
+        };
+        if (
+          !current.programs.some(
+            (program) => program.programId === progress.saved?.id,
+          )
+        ) {
+          current.programs.push({
+            programId: progress.saved.id,
+            programCode: progress.saved.programCode,
+            programName: progress.saved.programName,
+            reason: reference.reason,
+          });
+        }
+        current.isOption = current.isOption && reference.isOption;
+        recommendationMap.set(reference.courseCode, current);
+      }
     }
+
+    const rankedRecommendations = [...recommendationMap.values()]
+      .sort(
+        (left, right) =>
+          right.programs.length - left.programs.length ||
+          left.courseCode.localeCompare(right.courseCode),
+      )
+      .slice(0, MAX_RECOMMENDATIONS);
+    const recommendations = await Promise.all(
+      rankedRecommendations.map(async (recommendation) => ({
+        ...recommendation,
+        planCount: recommendation.programs.length,
+        course: await getCourseByCode(academicEnv, recommendation.courseCode),
+      })),
+    );
+
+    const selectedProgress = selectedProgram
+      ? programProgress.find((progress) => progress.saved?.id === selectedProgram.id) ?? null
+      : null;
+    const calendarMismatch = selectedProgress?.calendarMismatch === true;
+    const catalogProgram = selectedProgress?.catalog ?? null;
+    const requirementAnalysis = selectedProgress?.requirementAnalysis ?? null;
 
     const statusCounts = Object.fromEntries(
       ["completed", "in_progress", "planned", "transfer"].map((status) => [
@@ -201,6 +272,10 @@ export async function GET(request: Request) {
           catalog: catalogProgram,
           calendarMismatch,
         },
+        programs: programProgress.map(({ recommendations: _recommendations, ...progress }) => {
+          void _recommendations;
+          return progress;
+        }),
         courseRecords: records.map(publicCourse),
         calendar,
         requirementAnalysis,

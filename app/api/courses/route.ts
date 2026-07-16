@@ -4,6 +4,7 @@ import { getUserDb } from "@/db";
 import {
   COURSE_RECORD_STATUSES,
   courseRecords,
+  userPrograms,
   type CourseRecordStatus,
 } from "@/db/schema";
 import {
@@ -254,10 +255,16 @@ export async function POST(request: Request) {
     const credits = parseCredits(body.credits, catalogCourse);
 
     const db = getUserDb();
-    const existing = await db
-      .select()
-      .from(courseRecords)
-      .where(eq(courseRecords.userId, session.user.localId));
+    const [existing, programs] = await Promise.all([
+      db
+        .select()
+        .from(courseRecords)
+        .where(eq(courseRecords.userId, session.user.localId)),
+      db
+        .select()
+        .from(userPrograms)
+        .where(eq(userPrograms.userId, session.user.localId)),
+    ]);
     if (
       existing.some(
         (record) =>
@@ -280,6 +287,13 @@ export async function POST(request: Request) {
         courses: recordsAvailableByTerm(existing, term as string).map(
           toEvaluationCourse,
         ),
+        programs: programs
+          .filter((program) => program.catalogId === metadata.catalogId)
+          .map((program) => ({
+            programPid: program.programPid,
+            programCode: program.programCode,
+            status: "active" as const,
+          })),
       });
     }
 

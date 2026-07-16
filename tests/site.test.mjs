@@ -108,6 +108,34 @@ test("gives signed-in users an account-aware program and course browser", async 
   assert.match(courseDetail, /recordedCount/);
 });
 
+test("tracks multiple plans against one course record and prioritizes overlap", async () => {
+  const [browser, dashboardUi, dashboardRoute, programRoute, schema] =
+    await Promise.all([
+      source("components/GuestAcademicExplorer.tsx"),
+      source("app/app/AcademicDashboard.tsx"),
+      source("app/api/dashboard/route.ts"),
+      source("app/api/profile/program/route.ts"),
+      source("db/schema.ts"),
+    ]);
+
+  assert.match(browser, /Add to my plans/);
+  assert.match(browser, /Every tracked plan uses your shared course record/);
+  assert.match(dashboardUi, /dashboard\.programs\.map/);
+  assert.match(dashboardUi, /Best overlap · \{suggestion\.planCount\} plans/);
+  assert.match(dashboardUi, /right\.planCount - left\.planCount/);
+  assert.match(dashboardRoute, /programRows\.map\(async \(savedProgram\)/);
+  assert.match(dashboardRoute, /recommendationMap/);
+  assert.match(dashboardRoute, /right\.programs\.length - left\.programs\.length/);
+  assert.match(programRoute, /MAX_SAVED_PROGRAMS/);
+  assert.match(programRoute, /currentCalendarPrograms/);
+  assert.match(programRoute, /shouldBePrimary/);
+
+  const courseRecordsStart = schema.indexOf("export const courseRecords");
+  const courseRecordsEnd = schema.indexOf("\n);", courseRecordsStart);
+  const courseRecordsSchema = schema.slice(courseRecordsStart, courseRecordsEnd);
+  assert.doesNotMatch(courseRecordsSchema, /programId|program_id/);
+});
+
 test("keeps the optional grade field free of placeholder text", async () => {
   const [dashboard, browser] = await Promise.all([
     source("app/app/AcademicDashboard.tsx"),

@@ -4,6 +4,7 @@ import { getUserDb } from "@/db";
 import {
   COURSE_RECORD_STATUSES,
   courseRecords,
+  userPrograms,
   type CourseRecordStatus,
 } from "@/db/schema";
 import {
@@ -254,10 +255,16 @@ export async function PATCH(request: Request, context: RouteContext) {
       ? parseCredits(body.credits, catalogCourse)
       : existing.credits;
 
-    const otherCourses = await db
-      .select()
-      .from(courseRecords)
-      .where(eq(courseRecords.userId, session.user.localId));
+    const [otherCourses, programs] = await Promise.all([
+      db
+        .select()
+        .from(courseRecords)
+        .where(eq(courseRecords.userId, session.user.localId)),
+      db
+        .select()
+        .from(userPrograms)
+        .where(eq(userPrograms.userId, session.user.localId)),
+    ]);
     if (
       otherCourses.some(
         (record) =>
@@ -285,6 +292,13 @@ export async function PATCH(request: Request, context: RouteContext) {
           term as string,
         )
           .map(toEvaluationCourse),
+        programs: programs
+          .filter((program) => program.catalogId === metadata.catalogId)
+          .map((program) => ({
+            programPid: program.programPid,
+            programCode: program.programCode,
+            status: "active" as const,
+          })),
       });
     }
 

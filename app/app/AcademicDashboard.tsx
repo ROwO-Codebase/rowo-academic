@@ -74,6 +74,13 @@ interface DashboardRequirement {
   sourceLabel?: string | null;
 }
 
+interface DashboardProgramProgress {
+  profile: ProgramProfile;
+  summary: DashboardSummary | null;
+  requirements: DashboardRequirement[];
+  calendarMismatch: boolean;
+}
+
 interface PlannerTerm {
   id: string;
   label: string;
@@ -86,6 +93,11 @@ interface DashboardSuggestion {
   credits: number | null;
   reason: string;
   isOption: boolean;
+  planCount: number;
+  programs: Array<{
+    programCode: string;
+    programTitle: string;
+  }>;
 }
 
 interface DashboardPayload {
@@ -96,6 +108,7 @@ interface DashboardPayload {
   summary: DashboardSummary | null;
   courses: DashboardCourse[];
   requirements: DashboardRequirement[];
+  programs: DashboardProgramProgress[];
   terms: PlannerTerm[];
   suggestions: DashboardSuggestion[];
   updatedAt?: string | null;
@@ -195,33 +208,50 @@ interface ApiRequirementDocumentEvaluation {
   warnings: string[];
 }
 
+interface ApiRequirementAnalysis {
+  metCount: number;
+  notMetCount: number;
+  unknownCount: number;
+  documents: ApiRequirementDocumentEvaluation[];
+}
+
+interface ApiSavedProgram {
+  id: string;
+  catalogId?: string;
+  programPid?: string;
+  programCode: string;
+  programName: string;
+  programType?: string | null;
+  calendarYear: number;
+}
+
+interface ApiProgramProgress {
+  saved: ApiSavedProgram | null;
+  catalog: ApiCatalogProgram | null;
+  calendarMismatch: boolean;
+  requirementAnalysis: ApiRequirementAnalysis | null;
+}
+
 interface ApiDashboardPayload {
   user: DashboardUser;
   program: {
-    selected: {
-      id: string;
-      catalogId?: string;
-      programPid?: string;
-      programCode: string;
-      programName: string;
-      programType?: string | null;
-      calendarYear: number;
-    } | null;
+    selected: ApiSavedProgram | null;
     catalog: ApiCatalogProgram | null;
     calendarMismatch?: boolean;
   };
+  programs?: ApiProgramProgress[];
   courseRecords: ApiCourseRecord[];
   calendar: ApiCatalogMetadata;
-  requirementAnalysis: {
-    metCount: number;
-    notMetCount: number;
-    unknownCount: number;
-    documents: ApiRequirementDocumentEvaluation[];
-  } | null;
+  requirementAnalysis: ApiRequirementAnalysis | null;
   recommendedUnmetCourseReferences?: Array<{
     courseCode: string;
     reason: string;
     isOption: boolean;
+    planCount?: number;
+    programs?: Array<{
+      programCode: string;
+      programName: string;
+    }>;
     course: ApiCatalogCourse | null;
   }>;
   progress: {
@@ -410,6 +440,55 @@ function termSequence(label: string): number {
   return Number(match[1]) * 10 + season;
 }
 
+function normalizeRequirements(
+  analysis: ApiRequirementAnalysis | null | undefined,
+): DashboardRequirement[] {
+  return (analysis?.documents || []).map((document) => {
+    const matched = document.root?.matchedCourseCodes || [];
+    const unmet = document.root?.unmetCourseCodes || [];
+    const unknownReasons = document.root?.unknownReasons || [];
+    return {
+      id: document.documentId,
+      title: readableRequirementName(
+        document.requirementKind || document.sourceField,
+      ),
+      description: document.reason,
+      status: mapTriState(document.state),
+      evidence: matched,
+      missing: unmet,
+      note: unknownReasons[0] || document.warnings[0] || null,
+      sourceLabel:
+        readableRequirementName(document.sourceField) +
+        " · " +
+        document.parseStatus,
+    };
+  });
+}
+
+function normalizeProgramProfile(
+  saved: ApiSavedProgram,
+  catalogProgram: ApiCatalogProgram | null,
+  calendar: ApiCatalogMetadata,
+  calendarMismatch: boolean,
+): ProgramProfile {
+  return {
+    id: saved.id,
+    programPid: catalogProgram?.pid || saved.programPid || saved.programCode,
+    programCode: saved.programCode,
+    programTitle: saved.programName,
+    faculty: catalogProgram?.faculty || null,
+    credential:
+      catalogProgram?.undergraduateCredentialType ||
+      catalogProgram?.graduateCredentialType ||
+      saved.programType ||
+      null,
+    catalogId: saved.catalogId || calendar.catalogId,
+    catalogLabel: calendarMismatch
+      ? String(saved.calendarYear) + " calendar"
+      : calendar.calendarLabel,
+  };
+}
+
 function normalizeDashboardPayload(
   payload: DashboardPayload | ApiDashboardPayload,
 ): DashboardPayload {
@@ -421,6 +500,20 @@ function normalizeDashboardPayload(
       requirements: Array.isArray(payload.requirements)
         ? payload.requirements
         : [],
+      programs: Array.isArray(payload.programs)
+        ? payload.programs
+        : payload.profile && payload.summary
+          ? [
+              {
+                profile: payload.profile,
+                summary: payload.summary,
+                requirements: Array.isArray(payload.requirements)
+                  ? payload.requirements
+                  : [],
+                calendarMismatch: payload.calendarMismatch === true,
+              },
+            ]
+          : [],
       terms: Array.isArray(payload.terms) ? payload.terms : [],
       suggestions: Array.isArray(payload.suggestions)
         ? payload.suggestions
@@ -432,28 +525,7 @@ function normalizeDashboardPayload(
     ? payload.courseRecords
     : [];
   const analysis = payload.requirementAnalysis;
-  const requirements: DashboardRequirement[] = (analysis?.documents || []).map(
-    (document) => {
-      const matched = document.root?.matchedCourseCodes || [];
-      const unmet = document.root?.unmetCourseCodes || [];
-      const unknownReasons = document.root?.unknownReasons || [];
-      return {
-        id: document.documentId,
-        title: readableRequirementName(
-          document.requirementKind || document.sourceField,
-        ),
-        description: document.reason,
-        status: mapTriState(document.state),
-        evidence: matched,
-        missing: unmet,
-        note: unknownReasons[0] || document.warnings[0] || null,
-        sourceLabel:
-          readableRequirementName(document.sourceField) +
-          " · " +
-          document.parseStatus,
-      };
-    },
-  );
+  const requirements = normalizeRequirements(analysis);
 
   const dashboardCourses: DashboardCourse[] = records.map((record) => {
     const mappedStatus: CourseStatus = record.status;
@@ -499,9 +571,64 @@ function normalizeDashboardPayload(
   const catalogProgram = payload.program?.catalog;
   const calendar = payload.calendar;
   const calendarMismatch = payload.program?.calendarMismatch === true;
+  const apiPrograms =
+    payload.programs && payload.programs.length > 0
+      ? payload.programs
+      : selected
+        ? [
+            {
+              saved: selected,
+              catalog: catalogProgram,
+              calendarMismatch,
+              requirementAnalysis: analysis,
+            },
+          ]
+        : [];
+  const programs: DashboardProgramProgress[] = apiPrograms.flatMap((program) => {
+    if (!program.saved) return [];
+    const programRequirements = normalizeRequirements(program.requirementAnalysis);
+    return [
+      {
+        profile: normalizeProgramProfile(
+          program.saved,
+          program.catalog,
+          calendar,
+          program.calendarMismatch,
+        ),
+        summary: program.calendarMismatch
+          ? null
+          : {
+              completedUnits,
+              inProgressUnits,
+              plannedUnits,
+              requiredUnits: null,
+              overallAverage: weightedAverage(records),
+              majorAverage: null,
+              requirementsMet: program.requirementAnalysis?.metCount ?? 0,
+              requirementsTotal: program.requirementAnalysis?.documents.length ?? 0,
+              requirementsUnknown: program.requirementAnalysis?.unknownCount ?? 0,
+            },
+        requirements: programRequirements,
+        calendarMismatch: program.calendarMismatch,
+      },
+    ];
+  });
   const suggestionMap = new Map<string, DashboardSuggestion>();
   for (const reference of payload.recommendedUnmetCourseReferences || []) {
     if (!reference.courseCode || suggestionMap.has(reference.courseCode)) continue;
+    const suggestionPrograms =
+      reference.programs?.map((program) => ({
+        programCode: program.programCode,
+        programTitle: program.programName,
+      })) ||
+      (selected
+        ? [
+            {
+              programCode: selected.programCode,
+              programTitle: selected.programName,
+            },
+          ]
+        : []);
     suggestionMap.set(reference.courseCode, {
       courseCode: reference.courseCode,
       title: reference.course?.title || null,
@@ -509,29 +636,15 @@ function normalizeDashboardPayload(
         reference.course?.credits ?? reference.course?.creditMin ?? null,
       reason: reference.reason,
       isOption: reference.isOption,
+      planCount: reference.planCount ?? Math.max(1, suggestionPrograms.length),
+      programs: suggestionPrograms,
     });
   }
 
   return {
     user: payload.user,
     profile: selected
-      ? {
-          id: selected.id,
-          programPid:
-            catalogProgram?.pid || selected.programPid || selected.programCode,
-          programCode: selected.programCode,
-          programTitle: selected.programName,
-          faculty: catalogProgram?.faculty || null,
-          credential:
-            catalogProgram?.undergraduateCredentialType ||
-            catalogProgram?.graduateCredentialType ||
-            selected.programType ||
-            null,
-          catalogId: selected.catalogId || calendar.catalogId,
-          catalogLabel: calendarMismatch
-            ? String(selected.calendarYear) + " calendar"
-            : calendar.calendarLabel,
-        }
+      ? normalizeProgramProfile(selected, catalogProgram, calendar, calendarMismatch)
       : null,
     catalog: {
       id: calendar.catalogId,
@@ -553,8 +666,13 @@ function normalizeDashboardPayload(
       : null,
     courses: dashboardCourses,
     requirements,
+    programs,
     terms: plannedTerms,
-    suggestions: Array.from(suggestionMap.values()),
+    suggestions: Array.from(suggestionMap.values()).sort(
+      (left, right) =>
+        right.planCount - left.planCount ||
+        left.courseCode.localeCompare(right.courseCode),
+    ),
   };
 }
 
@@ -1119,11 +1237,18 @@ function OverviewPanel({
           <span className="eyebrow compact">
             {dashboard.profile?.catalogLabel || "Academic plan"}
           </span>
-          <h1>Good to see your plan, {dashboard.user.username}.</h1>
+          <h1>
+            Good to see your {dashboard.programs.length > 1 ? "plans" : "plan"},{" "}
+            {dashboard.user.username}.
+          </h1>
           <p>
+            {dashboard.programs.length > 1 ? "Primary: " : ""}
             {dashboard.profile?.programTitle}
             {dashboard.profile?.credential
               ? " · " + dashboard.profile.credential
+              : ""}
+            {dashboard.programs.length > 1
+              ? " · " + dashboard.programs.length + " tracked plans"
               : ""}
           </p>
         </div>
@@ -1371,9 +1496,6 @@ function RequirementCard({
 
 function ProgressPanel({ dashboard }: { dashboard: DashboardPayload }) {
   const [filter, setFilter] = useState<"all" | "attention">("all");
-  const requirements = dashboard.requirements.filter((requirement) =>
-    filter === "all" ? true : requirement.status !== "met",
-  );
 
   return (
     <div className="dashboard-panel">
@@ -1382,8 +1504,8 @@ function ProgressPanel({ dashboard }: { dashboard: DashboardPayload }) {
           <span className="eyebrow compact">Completed evidence first</span>
           <h1>Program progress</h1>
           <p>
-            Requirements follow {dashboard.profile?.programTitle} in the{" "}
-            {dashboard.profile?.catalogLabel} snapshot.
+            Your shared course record is evaluated independently against all{" "}
+            {dashboard.programs.length} tracked {dashboard.programs.length === 1 ? "plan" : "plans"}.
           </p>
         </div>
         <div className="segmented-control" aria-label="Requirement filter">
@@ -1412,19 +1534,69 @@ function ProgressPanel({ dashboard }: { dashboard: DashboardPayload }) {
         <span><i className="legend-dot unknown" /> Needs review</span>
       </div>
 
-      {requirements.length === 0 ? (
-        <div className="empty-state">
-          <span className="state-symbol small" aria-hidden="true">✓</span>
-          <h2>No requirements need attention.</h2>
-          <p>Switch to All to review every program rule.</p>
-        </div>
-      ) : (
-        <div className="requirement-list">
-          {requirements.map((requirement) => (
-            <RequirementCard key={requirement.id} requirement={requirement} />
-          ))}
-        </div>
-      )}
+      <div className="program-progress-list">
+        {dashboard.programs.map((program, index) => {
+          const requirements = program.requirements.filter((requirement) =>
+            filter === "all" ? true : requirement.status !== "met",
+          );
+          return (
+            <section className="program-progress-group" key={program.profile.id}>
+              <header className="program-progress-heading">
+                <div>
+                  <span className="card-kicker">Tracked plan {index + 1}</span>
+                  <h2>{program.profile.programTitle}</h2>
+                  <p>
+                    {[program.profile.programCode, program.profile.credential, program.profile.faculty]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                {program.summary && (
+                  <div className="program-progress-metrics" aria-label="Plan progress summary">
+                    <span>
+                      <strong>{program.summary.requirementsMet}</strong>
+                      requirements met
+                    </span>
+                    <span>
+                      <strong>{program.summary.requirementsTotal}</strong>
+                      evaluated
+                    </span>
+                    <span>
+                      <strong>{program.summary.requirementsUnknown}</strong>
+                      need review
+                    </span>
+                  </div>
+                )}
+              </header>
+
+              {program.calendarMismatch ? (
+                <div className="inline-error" role="alert">
+                  <strong>Calendar reconfirmation required.</strong>
+                  <span>This plan belongs to {program.profile.catalogLabel}.</span>
+                </div>
+              ) : requirements.length === 0 ? (
+                <div className="program-requirements-empty">
+                  <span aria-hidden="true">✓</span>
+                  <p>
+                    {filter === "attention"
+                      ? "No requirements in this plan need attention."
+                      : "No structured requirements are available for this plan."}
+                  </p>
+                </div>
+              ) : (
+                <div className="requirement-list">
+                  {requirements.map((requirement) => (
+                    <RequirementCard
+                      key={program.profile.id + "-" + requirement.id}
+                      requirement={requirement}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
 
       <aside className="academic-notice">
         <strong>Check important decisions with an advisor.</strong>
@@ -1534,8 +1706,9 @@ function PlannerPanel({
             <h2 id="suggested-courses-title">Suggested next courses</h2>
           </div>
           <p>
-            These courses may help with unmet references. They are not a
-            guarantee that every program rule will be satisfied.
+            Courses that advance more of your tracked plans appear first and
+            are highlighted. Suggestions are not a guarantee that every rule
+            will be satisfied.
           </p>
         </div>
 
@@ -1550,17 +1723,38 @@ function PlannerPanel({
         ) : (
           <div className="suggestion-grid">
             {dashboard.suggestions.slice(0, 6).map((suggestion) => (
-              <article className="suggestion-card" key={suggestion.courseCode}>
+              <article
+                className={classNames(
+                  "suggestion-card",
+                  suggestion.planCount > 1 && "multi-plan",
+                )}
+                key={suggestion.courseCode}
+              >
                 <div className="suggestion-card-top">
                   <div>
                     <strong>{suggestion.courseCode}</strong>
                     <h3>{suggestion.title || "Catalog course"}</h3>
                   </div>
-                  {suggestion.isOption && <span>One option</span>}
+                  {suggestion.planCount > 1 ? (
+                    <span className="multi-plan-badge">
+                      Best overlap · {suggestion.planCount} plans
+                    </span>
+                  ) : suggestion.isOption ? (
+                    <span>One option</span>
+                  ) : null}
                 </div>
                 <p>
                   <strong>May help:</strong> {suggestion.reason}
                 </p>
+                {suggestion.programs.length > 0 && (
+                  <div className="suggestion-plan-tags" aria-label="Plans this course may advance">
+                    {suggestion.programs.map((program) => (
+                      <span key={program.programCode} title={program.programTitle}>
+                        {program.programCode}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="suggestion-card-footer">
                   <span>
                     {suggestion.credits == null

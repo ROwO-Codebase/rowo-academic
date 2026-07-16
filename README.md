@@ -16,10 +16,13 @@ program, recording courses, evaluating a personal plan, and every write to `DB`
 remain behind ROwO sign-in.
 
 Signed-in students use the same Plans and Courses browser from the **Browse**
-tab. A course detail page evaluates its parsed requirements against courses and
-programs already saved to the student's account, clearly marks requirements as
-satisfied, not yet satisfied, or needing review, and can add that course to the
-student's record without leaving the detail page.
+tab. They can track multiple plans against one shared course record. The
+**Progress** tab evaluates every tracked plan independently, while the planner
+ranks courses that advance several plans ahead of single-plan suggestions and
+highlights that overlap. A course detail page evaluates its parsed requirements
+against courses and programs already saved to the student's account, clearly
+marks requirements as satisfied, not yet satisfied, or needing review, and can
+add that course to the student's record without leaving the detail page.
 
 ## Architecture
 

@@ -87,11 +87,13 @@ export async function GET(request: Request, context: RouteContext) {
       ).length;
       eligibility = validateCourseEligibility(requirements, {
         courses: records.map(toEvaluationCourse),
-        programs: programs.map((program) => ({
-          programPid: program.programPid,
-          programCode: program.programCode,
-          status: "active" as const,
-        })),
+        programs: programs
+          .filter((program) => program.catalogId === course.catalogId)
+          .map((program) => ({
+            programPid: program.programPid,
+            programCode: program.programCode,
+            status: "active" as const,
+          })),
       });
     }
 

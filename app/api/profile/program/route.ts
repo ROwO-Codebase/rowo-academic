@@ -13,6 +13,7 @@ import type { AcademicEnvironment, CatalogMetadata } from "@/lib/types";
 
 const MAX_BODY_BYTES = 8_192;
 const MAX_PROGRAM_CODE_LENGTH = 128;
+const MAX_SAVED_PROGRAMS = 8;
 const BODY_KEYS = new Set(["programCode"]);
 
 class InputError extends Error {}
@@ -98,6 +99,27 @@ export async function POST(request: Request) {
     const year = calendarYear(metadata);
     const now = Date.now();
     const db = getUserDb();
+    const existingPrograms = await db
+      .select()
+      .from(userPrograms)
+      .where(eq(userPrograms.userId, session.user.localId));
+    const existingProgram = existingPrograms.find(
+      (program) =>
+        program.programCode === catalogProgram.code &&
+        program.calendarYear === year,
+    );
+    const currentCalendarPrograms = existingPrograms.filter(
+      (program) => program.catalogId === metadata.catalogId,
+    );
+    if (!existingProgram && currentCalendarPrograms.length >= MAX_SAVED_PROGRAMS) {
+      return errorResponse(
+        "PROGRAM_LIMIT_REACHED",
+        `You can track up to ${MAX_SAVED_PROGRAMS} plans at once.`,
+        409,
+      );
+    }
+    const shouldBePrimary =
+      existingProgram?.isPrimary ?? currentCalendarPrograms.length === 0;
     const snapshot = {
       catalogId: metadata.catalogId,
       programPid: catalogProgram.pid,
@@ -112,32 +134,41 @@ export async function POST(request: Request) {
         catalogProgram.career ??
         "program"
       ).slice(0, 200),
-      isPrimary: true,
+      isPrimary: shouldBePrimary,
       updatedAt: now,
     };
 
-    await db.batch([
-      db
-        .update(userPrograms)
-        .set({ isPrimary: false, updatedAt: now })
-        .where(eq(userPrograms.userId, session.user.localId)),
-      db
-        .insert(userPrograms)
-        .values({
-          id: crypto.randomUUID(),
-          userId: session.user.localId,
-          ...snapshot,
-          createdAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            userPrograms.userId,
-            userPrograms.programCode,
-            userPrograms.calendarYear,
-          ],
-          set: snapshot,
-        }),
-    ]);
+    const saveProgram = db
+      .insert(userPrograms)
+      .values({
+        id: crypto.randomUUID(),
+        userId: session.user.localId,
+        ...snapshot,
+        createdAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          userPrograms.userId,
+          userPrograms.programCode,
+          userPrograms.calendarYear,
+        ],
+        set: snapshot,
+      });
+    if (
+      shouldBePrimary &&
+      !existingProgram?.isPrimary &&
+      existingPrograms.some((program) => program.isPrimary)
+    ) {
+      await db.batch([
+        db
+          .update(userPrograms)
+          .set({ isPrimary: false, updatedAt: now })
+          .where(eq(userPrograms.userId, session.user.localId)),
+        saveProgram,
+      ]);
+    } else {
+      await saveProgram;
+    }
 
     const [selectedProgram] = await db
       .select()

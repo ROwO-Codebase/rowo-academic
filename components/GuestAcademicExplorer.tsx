@@ -34,6 +34,10 @@ interface ProgramDetailPayload {
   catalog: CatalogMetadata;
 }
 
+interface ProgramMutationPayload {
+  success: boolean;
+}
+
 interface CourseDetailPayload {
   course: AcademicCourse;
   requirements: PublicRequirementSummary[];
@@ -226,7 +230,17 @@ function RequirementInformation({
   );
 }
 
-function PlanExplorer({ signedIn = false }: { signedIn?: boolean }) {
+function PlanExplorer({
+  signedIn = false,
+  savedProgramCodes = [],
+  onAdded,
+  setNotice,
+}: {
+  signedIn?: boolean;
+  savedProgramCodes?: string[];
+  onAdded?: () => Promise<void>;
+  setNotice?: (message: string) => void;
+}) {
   const searchId = useId();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<AcademicProgram[]>([]);
@@ -236,6 +250,9 @@ function PlanExplorer({ signedIn = false }: { signedIn?: boolean }) {
   const [detail, setDetail] = useState<ProgramDetailPayload | null>(null);
   const [detailState, setDetailState] = useState<LoadState>("idle");
   const [detailError, setDetailError] = useState("");
+  const [savingProgramPid, setSavingProgramPid] = useState<string | null>(null);
+  const [addError, setAddError] = useState("");
+  const savedCodes = new Set(savedProgramCodes.map((code) => code.toUpperCase()));
 
   const searchPrograms = useCallback(
     async (searchQuery: string, signal?: AbortSignal) => {
@@ -278,6 +295,7 @@ function PlanExplorer({ signedIn = false }: { signedIn?: boolean }) {
   async function openProgram(program: AcademicProgram) {
     setDetailState("loading");
     setDetailError("");
+    setAddError("");
     try {
       const payload = await requestBrowserJson<ProgramDetailPayload>(
         "/api/catalog/programs/" + encodeURIComponent(program.pid),
@@ -287,6 +305,28 @@ function PlanExplorer({ signedIn = false }: { signedIn?: boolean }) {
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "The plan could not be loaded.");
       setDetailState("error");
+    }
+  }
+
+  async function addPlan(program: AcademicProgram) {
+    if (savingProgramPid || savedCodes.has(program.code.toUpperCase())) return;
+    setSavingProgramPid(program.pid);
+    setAddError("");
+    try {
+      const payload = await requestBrowserJson<ProgramMutationPayload>(
+        "/api/profile/program",
+        {
+          method: "POST",
+          body: JSON.stringify({ programCode: program.code }),
+        },
+      );
+      if (!payload.success) throw new BrowserApiError("The plan could not be added.");
+      setNotice?.(program.title + " was added to your tracked plans.");
+      await onAdded?.();
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "The plan could not be added.");
+    } finally {
+      setSavingProgramPid(null);
     }
   }
 
@@ -367,7 +407,9 @@ function PlanExplorer({ signedIn = false }: { signedIn?: boolean }) {
                       </span>
                       <small>{program.code}</small>
                     </div>
-                    <span className="choose-program">View plan</span>
+                    <span className="choose-program">
+                      {savedCodes.has(program.code.toUpperCase()) ? "Saved" : "View plan"}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -412,6 +454,29 @@ function PlanExplorer({ signedIn = false }: { signedIn?: boolean }) {
               {detail.program.description && (
                 <p className="guest-description">{detail.program.description}</p>
               )}
+              {signedIn && (
+                <div className="course-detail-actions plan-detail-actions">
+                  <span className="course-recorded-note">
+                    Every tracked plan uses your shared course record.
+                  </span>
+                  <button
+                    className="button button-primary"
+                    type="button"
+                    disabled={
+                      savingProgramPid === detail.program.pid ||
+                      savedCodes.has(detail.program.code.toUpperCase())
+                    }
+                    onClick={() => void addPlan(detail.program)}
+                  >
+                    {savedCodes.has(detail.program.code.toUpperCase())
+                      ? "Plan added"
+                      : savingProgramPid === detail.program.pid
+                        ? "Adding…"
+                        : "Add to my plans"}
+                  </button>
+                </div>
+              )}
+              {addError && <div className="form-error" role="alert">{addError}</div>}
               <div className="guest-detail-section-heading">
                 <h3>Requirement information</h3>
                 <span>{detail.requirements.length} groups</span>
@@ -845,6 +910,7 @@ export function SignedInAcademicBrowser({
   dashboard: {
     terms: Array<{ label: string }>;
     courses: Array<{ term: string | null }>;
+    programs?: Array<{ profile: { programCode: string } }>;
   };
   initialQuery: string;
   initialTerm: string;
@@ -889,7 +955,12 @@ export function SignedInAcademicBrowser({
         </div>
       </section>
       {activeTab === "plans" ? (
-        <PlanExplorer signedIn />
+        <PlanExplorer
+          signedIn
+          savedProgramCodes={dashboard.programs?.map((program) => program.profile.programCode)}
+          onAdded={onAdded}
+          setNotice={setNotice}
+        />
       ) : (
         <CourseExplorer
           signedIn

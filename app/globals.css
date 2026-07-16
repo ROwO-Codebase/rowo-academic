@@ -1959,6 +1959,87 @@ button {
   background: var(--amber-600);
 }
 
+.program-progress-list {
+  display: grid;
+  gap: 18px;
+}
+
+.program-progress-group {
+  padding: 20px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-lg);
+  background: var(--slate-50);
+}
+
+.program-progress-heading {
+  display: flex;
+  margin-bottom: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.program-progress-heading h2 {
+  margin: 2px 0 3px;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+}
+
+.program-progress-heading p {
+  margin: 0;
+  color: var(--slate-500);
+  font-size: 10px;
+}
+
+.program-progress-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(74px, 1fr));
+  gap: 6px;
+}
+
+.program-progress-metrics span {
+  display: grid;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 1px solid var(--slate-200);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--slate-500);
+  place-content: center;
+  font-size: 8px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.program-progress-metrics strong {
+  color: var(--slate-900);
+  font-size: 16px;
+}
+
+.program-requirements-empty {
+  display: flex;
+  min-height: 74px;
+  padding: 14px;
+  border: 1px dashed var(--slate-300);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  color: var(--slate-500);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.program-requirements-empty span {
+  color: var(--emerald-700);
+  font-weight: 900;
+}
+
+.program-requirements-empty p {
+  margin: 0;
+}
+
 .requirement-list {
   display: grid;
   gap: 12px;
@@ -2169,6 +2250,12 @@ button {
   flex-direction: column;
 }
 
+.suggestion-card.multi-plan {
+  border-color: var(--indigo-500);
+  background: linear-gradient(145deg, var(--indigo-50), var(--white));
+  box-shadow: 0 12px 28px -22px rgb(67 56 202 / 0.7);
+}
+
 .suggestion-card-top {
   display: flex;
   align-items: flex-start;
@@ -2197,6 +2284,11 @@ button {
   font-weight: 800;
 }
 
+.suggestion-card-top > .multi-plan-badge {
+  background: var(--emerald-100);
+  color: var(--emerald-700);
+}
+
 .suggestion-card > p {
   margin: 9px 0 12px;
   color: var(--slate-500);
@@ -2206,6 +2298,23 @@ button {
 
 .suggestion-card > p strong {
   color: var(--slate-700);
+}
+
+.suggestion-plan-tags {
+  display: flex;
+  margin: -3px 0 12px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.suggestion-plan-tags span {
+  padding: 3px 6px;
+  border: 1px solid var(--indigo-100);
+  border-radius: 6px;
+  background: var(--white);
+  color: var(--indigo-700);
+  font-size: 8px;
+  font-weight: 800;
 }
 
 .suggestion-card-footer {
@@ -3572,6 +3681,18 @@ button {
   .status-legend {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .program-progress-heading {
+    flex-direction: column;
+  }
+
+  .program-progress-metrics {
+    width: 100%;
+  }
+
+  .program-progress-group {
+    padding: 16px;
   }
 
   .requirement-card {

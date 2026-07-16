@@ -14,6 +14,7 @@ import {
   countedAcademicUnits,
   isNonAcademicCourseCode,
 } from "@/lib/course-records";
+import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
 import { Brand } from "../../components/Brand";
 import {
   GuestAcademicExplorer,
@@ -388,6 +389,18 @@ function formatUnits(value: number): string {
 
 function formatAverage(value?: number | null): string {
   return typeof value === "number" ? value.toFixed(1) + "%" : "Needs grades";
+}
+
+function formatGpa(value?: number | null): string | null {
+  if (typeof value !== "number") return null;
+  const gpa = percentageToGpa(value);
+  return gpa === null ? "GPA not mapped" : gpa.toFixed(2) + " GPA";
+}
+
+function formatAverageWithGpa(value?: number | null): string {
+  const percentage = formatAverage(value);
+  const gpa = formatGpa(value);
+  return gpa ? percentage + " · " + gpa : percentage;
 }
 
 function classNames(...values: Array<string | false | null | undefined>) {
@@ -1231,6 +1244,7 @@ function OverviewPanel({
             sum + countedAcademicUnits(course.code, course.credits),
           0,
         ),
+        average: weightedGradeAverage(courses),
       }));
   }, [dashboard.courses]);
 
@@ -1371,12 +1385,12 @@ function OverviewPanel({
           <section className="summary-grid" aria-label="Academic summary">
             <SummaryMetric
               label="Overall average"
-              value={formatAverage(summary.overallAverage)}
+              value={formatAverageWithGpa(summary.overallAverage)}
               note="Completed graded courses"
             />
             <SummaryMetric
               label="Major average"
-              value={formatAverage(summary.majorAverage)}
+              value={formatAverageWithGpa(summary.majorAverage)}
               note={
                 summary.majorAverage == null
                   ? "More eligible grades may be needed"
@@ -1428,10 +1442,15 @@ function OverviewPanel({
                       <span>Academic term</span>
                       <h3 id={headingId}>{group.term}</h3>
                     </div>
-                    <strong>
-                      {group.courses.length} {group.courses.length === 1 ? "course" : "courses"}
-                      {" · "}{formatUnits(group.units)} academic units
-                    </strong>
+                    <div className="course-term-summary">
+                      <strong>
+                        {group.courses.length} {group.courses.length === 1 ? "course" : "courses"}
+                        {" · "}{formatUnits(group.units)} academic units
+                      </strong>
+                      <span>
+                        Term average: {formatAverageWithGpa(group.average)}
+                      </span>
+                    </div>
                   </div>
                   <div className="course-table-wrap">
                     <table className="course-table">
@@ -1456,7 +1475,12 @@ function OverviewPanel({
                             </td>
                             <td data-label="Grade">
                               {typeof course.grade === "number"
-                                ? course.grade.toFixed(1) + "%"
+                                ? (
+                                  <span className="course-grade-display">
+                                    <strong>{course.grade.toFixed(1) + "%"}</strong>
+                                    <small>{formatGpa(course.grade)}</small>
+                                  </span>
+                                )
                                 : "—"}
                             </td>
                             <td data-label="Status">

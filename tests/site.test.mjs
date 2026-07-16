@@ -192,6 +192,21 @@ test("groups the signed-in course record by academic term", async () => {
   assert.match(styles, /\.course-term-heading/);
 });
 
+test("shows graded-only term averages with GPA equivalents in Overview", async () => {
+  const [dashboard, grades, styles] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("lib/grade-scale.ts"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(dashboard, /average: weightedGradeAverage\(courses\)/);
+  assert.match(dashboard, /Term average: \{formatAverageWithGpa\(group\.average\)\}/);
+  assert.match(dashboard, /course-grade-display/);
+  assert.match(grades, /record\.grade !== null|typeof record\.grade === "number"/);
+  assert.match(grades, /percentageToGpa/);
+  assert.match(styles, /\.course-term-summary/);
+});
+
 test("labels COOP and PD courses as non-academic and excludes their units", async () => {
   const [classification, dashboardUi, dashboardRoute, browser] = await Promise.all([
     source("lib/course-records.ts"),

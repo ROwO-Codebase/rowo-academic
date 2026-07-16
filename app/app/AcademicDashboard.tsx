@@ -1947,11 +1947,6 @@ function CatalogPanel({
                     step="0.1"
                     value={grade}
                     onChange={(event) => setGrade(event.target.value)}
-                    placeholder={
-                      status === "completed" || status === "transfer"
-                        ? "82"
-                        : "Completed or transfer only"
-                    }
                     disabled={
                       status !== "completed" && status !== "transfer"
                     }

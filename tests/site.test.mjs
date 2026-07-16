@@ -88,6 +88,13 @@ test("allows guests to inspect plans and courses without exposing personal data 
   assert.match(courseWrites, /getLocalSession/);
 });
 
+test("keeps the optional grade field free of placeholder text", async () => {
+  const dashboard = await source("app/app/AcademicDashboard.tsx");
+
+  assert.doesNotMatch(dashboard, /Completed or transfer only/);
+  assert.doesNotMatch(dashboard, /placeholder=\{[\s\S]*?\? "82"/);
+});
+
 test("includes an initial app-database migration and never stores the SSO token in browser storage", async () => {
   const [migrationFiles, callback] = await Promise.all([
     readdir(new URL("drizzle/", root)),

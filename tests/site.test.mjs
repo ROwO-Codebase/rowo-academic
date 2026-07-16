@@ -156,6 +156,23 @@ test("groups the signed-in course record by academic term", async () => {
   assert.match(styles, /\.course-term-heading/);
 });
 
+test("labels COOP and PD courses as non-academic and excludes their units", async () => {
+  const [classification, dashboardUi, dashboardRoute, browser] = await Promise.all([
+    source("lib/course-records.ts"),
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/api/dashboard/route.ts"),
+    source("components/GuestAcademicExplorer.tsx"),
+  ]);
+
+  assert.match(classification, /startsWith\("COOP"\)/);
+  assert.match(classification, /startsWith\("PD"\)/);
+  assert.match(dashboardRoute, /countedAcademicUnits/);
+  assert.match(dashboardUi, /projected academic units/);
+  assert.match(dashboardUi, /Non-academic/);
+  assert.match(browser, /isNonAcademicCourseCode/);
+  assert.match(browser, /Non-academic/);
+});
+
 test("keeps the optional grade field free of placeholder text", async () => {
   const [dashboard, browser] = await Promise.all([
     source("app/app/AcademicDashboard.tsx"),

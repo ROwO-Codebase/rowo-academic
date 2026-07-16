@@ -13,6 +13,7 @@ import type {
   CatalogMetadata,
 } from "@/lib/types";
 import type { PublicRequirementSummary } from "@/lib/public-academic";
+import { isNonAcademicCourseCode } from "@/lib/course-records";
 import { Brand } from "./Brand";
 
 type GuestTab = "plans" | "courses";
@@ -746,7 +747,11 @@ function CourseExplorer({
                     <span className="course-code-box">{course.code}</span>
                     <span>
                       <strong>{course.title}</strong>
-                      <small>{formatUnits(course.credits ?? course.creditMin)}</small>
+                      <small>
+                        {isNonAcademicCourseCode(course.code)
+                          ? "Non-academic"
+                          : formatUnits(course.credits ?? course.creditMin)}
+                      </small>
                     </span>
                     <span className="choose-program">View</span>
                   </button>
@@ -782,7 +787,9 @@ function CourseExplorer({
                 <h2>{detail.course.title}</h2>
                 <p>
                   {[
-                    formatUnits(detail.course.credits ?? detail.course.creditMin),
+                    isNonAcademicCourseCode(detail.course.code)
+                      ? "Non-academic"
+                      : formatUnits(detail.course.credits ?? detail.course.creditMin),
                     detail.course.subjectDescription,
                     detail.course.courseLevel,
                   ].filter(Boolean).join(" · ")}

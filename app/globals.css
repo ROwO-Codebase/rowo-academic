@@ -1841,6 +1841,22 @@ button {
   white-space: nowrap;
 }
 
+.course-table td:first-child .non-academic-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 6px;
+  border: 1px solid var(--amber-100);
+  border-radius: 6px;
+  background: var(--amber-50);
+  color: var(--amber-800);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .course-table select,
 .form-grid select,
 .form-grid input {

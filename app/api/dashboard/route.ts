@@ -11,6 +11,10 @@ import {
 } from "@/lib/academic";
 import { getLocalSession } from "@/lib/auth";
 import {
+  countedAcademicUnits,
+  isNonAcademicCourseCode,
+} from "@/lib/course-records";
+import {
   collectUnmetCourseCodes,
   evaluateRequirementDocuments,
   extractCourseRecommendations,
@@ -62,7 +66,9 @@ function toEvaluationCourse(record: typeof courseRecords.$inferSelect): StudentC
 
 function completedUnits(records: Array<typeof courseRecords.$inferSelect>): number | null {
   const completed = records.filter(
-    (record) => record.status === "completed" || record.status === "transfer",
+    (record) =>
+      (record.status === "completed" || record.status === "transfer") &&
+      !isNonAcademicCourseCode(record.courseCode),
   );
   const uniqueCourses = new Map<
     string,
@@ -101,10 +107,18 @@ function groupByTerm(records: Array<typeof courseRecords.$inferSelect>) {
       term,
       label: term ?? "Unscheduled",
       courses: courses.map(publicCourse),
-      credits: courses.reduce((sum, course) => sum + (course.credits ?? 0), 0),
+      credits: courses.reduce(
+        (sum, course) =>
+          sum + countedAcademicUnits(course.courseCode, course.credits),
+        0,
+      ),
       completedCredits: courses
         .filter((course) => course.status === "completed" || course.status === "transfer")
-        .reduce((sum, course) => sum + (course.credits ?? 0), 0),
+        .reduce(
+          (sum, course) =>
+            sum + countedAcademicUnits(course.courseCode, course.credits),
+          0,
+        ),
     }));
 }
 
@@ -285,7 +299,8 @@ export async function GET(request: Request) {
           statusCounts,
           completedUnits: completedUnits(records),
           totalRecordedCredits: records.reduce(
-            (sum, course) => sum + (course.credits ?? 0),
+            (sum, course) =>
+              sum + countedAcademicUnits(course.courseCode, course.credits),
             0,
           ),
         },

@@ -10,6 +10,10 @@ import {
   type KeyboardEvent,
 } from "react";
 import Link from "next/link";
+import {
+  countedAcademicUnits,
+  isNonAcademicCourseCode,
+} from "@/lib/course-records";
 import { Brand } from "../../components/Brand";
 import {
   GuestAcademicExplorer,
@@ -55,6 +59,7 @@ interface DashboardCourse {
   code: string;
   title: string;
   credits: number;
+  nonAcademic: boolean;
   term: string;
   status: CourseStatus;
   grade?: number | null;
@@ -411,7 +416,8 @@ function weightedAverage(records: ApiCourseRecord[]): number | null {
   const graded = records
     .filter(
       (record) =>
-        record.status === "completed" || record.status === "transfer",
+        (record.status === "completed" || record.status === "transfer") &&
+        !isNonAcademicCourseCode(record.courseCode),
     )
     .map((record) => ({
       grade: numericGrade(record.grade),
@@ -541,6 +547,7 @@ function normalizeDashboardPayload(
       code: record.courseCode,
       title: record.courseTitle,
       credits: record.credits ?? 0,
+      nonAcademic: isNonAcademicCourseCode(record.courseCode),
       term: record.term || "Unscheduled",
       status: mappedStatus,
       grade: numericGrade(record.grade),
@@ -569,10 +576,18 @@ function normalizeDashboardPayload(
   const completedUnits = payload.progress?.completedUnits ?? null;
   const inProgressUnits = records
     .filter((record) => record.status === "in_progress")
-    .reduce((sum, record) => sum + (record.credits ?? 0), 0);
+    .reduce(
+      (sum, record) =>
+        sum + countedAcademicUnits(record.courseCode, record.credits),
+      0,
+    );
   const plannedUnits = records
     .filter((record) => record.status === "planned")
-    .reduce((sum, record) => sum + (record.credits ?? 0), 0);
+    .reduce(
+      (sum, record) =>
+        sum + countedAcademicUnits(record.courseCode, record.credits),
+      0,
+    );
   const selected = payload.program?.selected;
   const catalogProgram = payload.program?.catalog;
   const calendar = payload.calendar;
@@ -1204,7 +1219,11 @@ function OverviewPanel({
       .map(([term, courses]) => ({
         term,
         courses: [...courses].sort((left, right) => left.code.localeCompare(right.code)),
-        units: courses.reduce((sum, course) => sum + course.credits, 0),
+        units: courses.reduce(
+          (sum, course) =>
+            sum + countedAcademicUnits(course.code, course.credits),
+          0,
+        ),
       }));
   }, [dashboard.courses]);
 
@@ -1298,7 +1317,7 @@ function OverviewPanel({
                       " units"
                     : summary.completedUnits === null
                       ? "Completed units unknown"
-                      : formatUnits(summary.completedUnits) + " completed units"}
+                      : formatUnits(summary.completedUnits) + " completed academic units"}
                 </h2>
               </div>
               <strong>
@@ -1306,7 +1325,7 @@ function OverviewPanel({
                   ? Math.round(completedPercent) + "%"
                   : projectedUnits === null
                     ? "Projection unknown"
-                    : formatUnits(projectedUnits) + " projected"}
+                    : formatUnits(projectedUnits) + " projected academic units"}
               </strong>
             </div>
             {summary.requiredUnits && summary.completedUnits !== null ? (
@@ -1332,7 +1351,7 @@ function OverviewPanel({
                 <strong>
                   {projectedUnits === null
                     ? "Unknown"
-                    : formatUnits(projectedUnits) + " units"}
+                    : formatUnits(projectedUnits) + " academic units"}
                 </strong>
               </span>
               <span>
@@ -1404,7 +1423,7 @@ function OverviewPanel({
                     </div>
                     <strong>
                       {group.courses.length} {group.courses.length === 1 ? "course" : "courses"}
-                      {" · "}{formatUnits(group.units)} units
+                      {" · "}{formatUnits(group.units)} academic units
                     </strong>
                   </div>
                   <div className="course-table-wrap">
@@ -1424,6 +1443,9 @@ function OverviewPanel({
                             <td data-label="Course">
                               <strong>{course.code}</strong>
                               <span>{course.title}</span>
+                              {course.nonAcademic && (
+                                <small className="non-academic-badge">Non-academic</small>
+                              )}
                             </td>
                             <td data-label="Grade">
                               {typeof course.grade === "number"
@@ -1837,7 +1859,9 @@ function PlannerPanel({
                 )}
                 <div className="suggestion-card-footer">
                   <span>
-                    {suggestion.credits == null
+                    {isNonAcademicCourseCode(suggestion.courseCode)
+                      ? "Non-academic"
+                      : suggestion.credits == null
                       ? "Units vary"
                       : formatUnits(suggestion.credits) + " units"}
                   </span>
@@ -1888,9 +1912,13 @@ function PlannerPanel({
                   </div>
                   <strong>
                     {formatUnits(
-                      courses.reduce((sum, course) => sum + course.credits, 0),
+                      courses.reduce(
+                        (sum, course) =>
+                          sum + countedAcademicUnits(course.code, course.credits),
+                        0,
+                      ),
                     )}{" "}
-                    units
+                    academic units
                   </strong>
                 </div>
                 <div className="term-courses">
@@ -1904,7 +1932,11 @@ function PlannerPanel({
                           <strong>{course.code}</strong>
                           <h3>{course.title}</h3>
                         </div>
-                        <span>{formatUnits(course.credits)}</span>
+                        <span>
+                          {course.nonAcademic
+                            ? "Non-academic"
+                            : formatUnits(course.credits) + " units"}
+                        </span>
                       </div>
                       <EligibilityBadge status={course.eligibility} />
                       {course.eligibilityMessage && (
@@ -2293,7 +2325,11 @@ function LegacyCatalogPanel({
                       <h3>{course.title}</h3>
                       <p>{course.description || "No description available."}</p>
                       <div className="catalog-course-meta">
-                        <span>{formatUnits(course.credits)} units</span>
+                        <span>
+                          {isNonAcademicCourseCode(course.code)
+                            ? "Non-academic"
+                            : formatUnits(course.credits) + " units"}
+                        </span>
                         {course.eligibility && (
                           <EligibilityBadge status={course.eligibility} />
                         )}

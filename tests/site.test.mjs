@@ -56,6 +56,38 @@ test("validates ROwO sign-in through the Worker service binding", async () => {
   assert.match(auth, /response\.status >= 300 && response\.status < 400/);
 });
 
+test("allows guests to inspect plans and courses without exposing personal data writes", async () => {
+  const [
+    guestExplorer,
+    programSearch,
+    courseSearch,
+    programDetail,
+    courseDetail,
+    dashboard,
+    courseWrites,
+  ] = await Promise.all([
+    source("components/GuestAcademicExplorer.tsx"),
+    source("app/api/catalog/programs/route.ts"),
+    source("app/api/catalog/courses/route.ts"),
+    source("app/api/catalog/programs/[pid]/route.ts"),
+    source("app/api/catalog/courses/[pid]/route.ts"),
+    source("app/api/dashboard/route.ts"),
+    source("app/api/courses/route.ts"),
+  ]);
+
+  assert.match(guestExplorer, /Browsing as a guest/);
+  assert.match(guestExplorer, /Explore a Waterloo plan/);
+  assert.match(guestExplorer, /Check course information/);
+  assert.match(guestExplorer, /Nothing\s+is saved until you sign in with ROwO/);
+  assert.doesNotMatch(programSearch, /getLocalSession/);
+  assert.doesNotMatch(courseSearch, /getLocalSession/);
+  assert.match(courseSearch, /normalizeCourseQuery/);
+  assert.match(programDetail, /summarizePublicRequirement/);
+  assert.match(courseDetail, /summarizePublicRequirement/);
+  assert.match(dashboard, /getLocalSession/);
+  assert.match(courseWrites, /getLocalSession/);
+});
+
 test("includes an initial app-database migration and never stores the SSO token in browser storage", async () => {
   const [migrationFiles, callback] = await Promise.all([
     readdir(new URL("drizzle/", root)),

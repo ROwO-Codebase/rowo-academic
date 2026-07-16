@@ -11,6 +11,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { Brand } from "../../components/Brand";
+import { GuestAcademicExplorer } from "../../components/GuestAcademicExplorer";
 
 type TabId = "overview" | "progress" | "planner" | "catalog";
 type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
@@ -2055,7 +2056,7 @@ function CatalogPanel({
 export function AcademicDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [loadState, setLoadState] = useState<
-    "loading" | "ready" | "error" | "unauthorized"
+    "loading" | "ready" | "error" | "guest"
   >("loading");
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -2076,7 +2077,7 @@ export function AcademicDashboard() {
       setLoadState("ready");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        setLoadState("unauthorized");
+        setLoadState("guest");
         return;
       }
       setLoadError(
@@ -2118,6 +2119,10 @@ export function AcademicDashboard() {
     loadState === "ready" &&
     Boolean(dashboard && dashboard.profile && !dashboard.calendarMismatch);
 
+  if (loadState === "guest") {
+    return <GuestAcademicExplorer />;
+  }
+
   return (
     <div className="app-page">
       <DashboardHeader
@@ -2129,15 +2134,6 @@ export function AcademicDashboard() {
 
       {loadState === "loading" && (
         <main id="main-content"><AppLoading /></main>
-      )}
-      {loadState === "unauthorized" && (
-        <main id="main-content">
-          <AppError
-            unauthorized
-            title="Sign in to open your academic plan."
-            message="ROwO Academic uses your existing ROwO account. Your password is never entered here."
-          />
-        </main>
       )}
       {loadState === "error" && (
         <main id="main-content">

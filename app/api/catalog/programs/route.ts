@@ -4,7 +4,6 @@ import {
   getCatalogMetadata,
   searchPrograms,
 } from "@/lib/academic";
-import { getLocalSession } from "@/lib/auth";
 import type { AcademicEnvironment, ProgramSearchOptions } from "@/lib/types";
 
 const MAX_QUERY_LENGTH = 120;
@@ -74,11 +73,6 @@ function validateQuery(searchParams: URLSearchParams) {
 
 export async function GET(request: Request) {
   try {
-    const session = await getLocalSession(request);
-    if (!session) {
-      return errorResponse("UNAUTHENTICATED", "Sign in with ROwO to continue.", 401);
-    }
-
     const url = new URL(request.url);
     validateQuery(url.searchParams);
     const options: ProgramSearchOptions = {
@@ -134,7 +128,7 @@ export async function GET(request: Request) {
           hasMore: programs.length === options.limit,
         },
       },
-      { headers: { "cache-control": "no-store" } },
+      { headers: { "cache-control": "public, max-age=60, s-maxage=300" } },
     );
   } catch (error) {
     if (error instanceof InputError) {

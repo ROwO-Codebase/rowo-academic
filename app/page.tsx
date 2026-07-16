@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 };
 
 const signInHref = "/auth/login?return_to=%2Fapp";
+const guestHref = "/app";
 
 export default function Home() {
   return (
@@ -20,6 +21,7 @@ export default function Home() {
           <nav className="public-nav" aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
             <a href="#built-for-planning">What it checks</a>
+            <a href={guestHref}>Browse calendar</a>
           </nav>
           <a className="button button-primary button-compact" href={signInHref}>
             Sign in with ROwO
@@ -42,16 +44,16 @@ export default function Home() {
                 understand.
               </p>
               <div className="hero-actions">
-                <a className="button button-primary" href={signInHref}>
-                  Plan my degree
+                <a className="button button-primary" href={guestHref}>
+                  Explore plans and courses
                   <span aria-hidden="true">→</span>
                 </a>
-                <a className="button button-secondary" href="#how-it-works">
-                  See how it works
+                <a className="button button-secondary" href={signInHref}>
+                  Sign in to save
                 </a>
               </div>
               <ul className="trust-list" aria-label="Product highlights">
-                <li><span aria-hidden="true">✓</span> Uses your ROwO account</li>
+                <li><span aria-hidden="true">✓</span> Browse without signing in</li>
                 <li><span aria-hidden="true">✓</span> Keeps plans private</li>
                 <li><span aria-hidden="true">✓</span> Shows uncertain rules</li>
               </ul>
@@ -123,8 +125,8 @@ export default function Home() {
                 that snapshot attached to your profile instead of silently
                 changing the rules later.
               </p>
-              <a className="text-link" href={signInHref}>
-                Start with my ROwO account <span aria-hidden="true">→</span>
+              <a className="text-link" href={guestHref}>
+                Explore the calendar as a guest <span aria-hidden="true">→</span>
               </a>
             </div>
             <ol className="steps-list">
@@ -169,10 +171,15 @@ export default function Home() {
               <h2>Make the next course choice easier to explain.</h2>
               <p>Bring your program and course history into one private plan.</p>
             </div>
-            <a className="button button-light" href={signInHref}>
-              Sign in and get started
-              <span aria-hidden="true">→</span>
-            </a>
+            <div className="cta-actions">
+              <a className="button button-light" href={guestHref}>
+                Browse as guest
+                <span aria-hidden="true">→</span>
+              </a>
+              <a className="button button-secondary" href={signInHref}>
+                Sign in to save
+              </a>
+            </div>
           </div>
         </section>
 

@@ -1,6 +1,5 @@
 import { env } from "cloudflare:workers";
 import { AcademicDataError, searchCourses } from "@/lib/academic";
-import { getLocalSession } from "@/lib/auth";
 import type { AcademicEnvironment, CourseSearchOptions } from "@/lib/types";
 
 const MAX_QUERY_LENGTH = 120;
@@ -30,6 +29,13 @@ function cleanText(
     throw new InputError(`${label} is invalid or too long.`);
   }
   return cleaned;
+}
+
+function normalizeCourseQuery(value: string | undefined): string | undefined {
+  if (!value) return value;
+  return /^[A-Za-z]{2,8}\s+\d{2,4}[A-Za-z]?$/.test(value)
+    ? value.replace(/\s+/g, "")
+    : value;
 }
 
 function boundedInteger(
@@ -63,15 +69,12 @@ function validateQuery(searchParams: URLSearchParams) {
 
 export async function GET(request: Request) {
   try {
-    const session = await getLocalSession(request);
-    if (!session) {
-      return errorResponse("UNAUTHENTICATED", "Sign in with ROwO to continue.", 401);
-    }
-
     const url = new URL(request.url);
     validateQuery(url.searchParams);
     const options: CourseSearchOptions = {
-      query: cleanText(url.searchParams.get("q"), "q", MAX_QUERY_LENGTH),
+      query: normalizeCourseQuery(
+        cleanText(url.searchParams.get("q"), "q", MAX_QUERY_LENGTH),
+      ),
       subjectCode: cleanText(
         url.searchParams.get("subject"),
         "subject",
@@ -116,7 +119,7 @@ export async function GET(request: Request) {
           hasMore: courses.length === options.limit,
         },
       },
-      { headers: { "cache-control": "no-store" } },
+      { headers: { "cache-control": "public, max-age=60, s-maxage=300" } },
     );
   } catch (error) {
     if (error instanceof InputError) {

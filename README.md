@@ -10,6 +10,11 @@ data to help students:
 
 The production Worker is deployed at <https://academic.rowo.link>.
 
+Guests can browse the active calendar's plan and course information without an
+account. Guest endpoints are read-only and query only `ACADEMIC_DB`; selecting a
+program, recording courses, evaluating a personal plan, and every write to `DB`
+remain behind ROwO sign-in.
+
 ## Architecture
 
 - [vinext](https://github.com/cloudflare/vinext), Vite, React, and TypeScript
@@ -79,6 +84,11 @@ work, the parent ROwO site must explicitly allow
 at [`docs/rowo-auth-academic-sso.patch`](docs/rowo-auth-academic-sso.patch).
 Browser code does not call the ROwO API directly, so this integration does not
 require a CORS change.
+
+The public `/api/catalog/programs*` and `/api/catalog/courses*` routes expose
+only bounded, read-only calendar searches and summaries. User dashboards,
+saved programs, course records, and mutations continue to require a valid local
+Academic session.
 
 ## Environments and calendar rollover
 

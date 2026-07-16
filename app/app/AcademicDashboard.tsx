@@ -440,6 +440,12 @@ function termSequence(label: string): number {
   return Number(match[1]) * 10 + season;
 }
 
+function courseRecordTermSequence(label: string): number {
+  if (label === "Unscheduled") return -1;
+  const sequence = termSequence(label);
+  return sequence === Number.MAX_SAFE_INTEGER ? 0 : sequence;
+}
+
 function normalizeRequirements(
   analysis: ApiRequirementAnalysis | null | undefined,
 ): DashboardRequirement[] {
@@ -1183,6 +1189,24 @@ function OverviewPanel({
       ? null
       : summary.completedUnits + summary.inProgressUnits + summary.plannedUnits
     : null;
+  const courseGroups = useMemo(() => {
+    const groups = new Map<string, DashboardCourse[]>();
+    for (const course of dashboard.courses) {
+      const courses = groups.get(course.term) ?? [];
+      courses.push(course);
+      groups.set(course.term, courses);
+    }
+    return [...groups.entries()]
+      .sort(
+        ([left], [right]) =>
+          courseRecordTermSequence(right) - courseRecordTermSequence(left),
+      )
+      .map(([term, courses]) => ({
+        term,
+        courses: [...courses].sort((left, right) => left.code.localeCompare(right.code)),
+        units: courses.reduce((sum, course) => sum + course.credits, 0),
+      }));
+  }, [dashboard.courses]);
 
   async function patchCourse(
     course: DashboardCourse,
@@ -1368,65 +1392,83 @@ function OverviewPanel({
             </button>
           </div>
         ) : (
-          <div className="course-table-wrap">
-            <table className="course-table">
-              <thead>
-                <tr>
-                  <th scope="col">Course</th>
-                  <th scope="col">Term</th>
-                  <th scope="col">Grade</th>
-                  <th scope="col">Status</th>
-                  <th scope="col"><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.courses.map((course) => (
-                  <tr key={course.id}>
-                    <td data-label="Course">
-                      <strong>{course.code}</strong>
-                      <span>{course.title}</span>
-                    </td>
-                    <td data-label="Term">{course.term}</td>
-                    <td data-label="Grade">
-                      {typeof course.grade === "number"
-                        ? course.grade.toFixed(1) + "%"
-                        : "—"}
-                    </td>
-                    <td data-label="Status">
-                      <label className="sr-only" htmlFor={"status-" + course.id}>
-                        Status for {course.code}
-                      </label>
-                      <select
-                        id={"status-" + course.id}
-                        value={course.status}
-                        disabled={busyCourseId === course.id}
-                        onChange={(event) =>
-                          void patchCourse(course, {
-                            status: event.target.value as CourseStatus,
-                          })
-                        }
-                      >
-                        <option value="completed">Completed</option>
-                        <option value="in_progress">In progress</option>
-                        <option value="planned">Planned</option>
-                        <option value="transfer">Transfer</option>
-                      </select>
-                    </td>
-                    <td className="course-actions">
-                      <button
-                        className="icon-button danger"
-                        type="button"
-                        disabled={busyCourseId === course.id}
-                        aria-label={"Remove " + course.code}
-                        onClick={() => void removeCourse(course)}
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="course-term-groups">
+            {courseGroups.map((group) => {
+              const headingId = "course-term-" + group.term.replace(/[^A-Za-z0-9]+/g, "-");
+              return (
+                <section className="course-term-group" key={group.term} aria-labelledby={headingId}>
+                  <div className="course-term-heading">
+                    <div>
+                      <span>Academic term</span>
+                      <h3 id={headingId}>{group.term}</h3>
+                    </div>
+                    <strong>
+                      {group.courses.length} {group.courses.length === 1 ? "course" : "courses"}
+                      {" · "}{formatUnits(group.units)} units
+                    </strong>
+                  </div>
+                  <div className="course-table-wrap">
+                    <table className="course-table">
+                      <caption className="sr-only">Courses recorded for {group.term}</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Course</th>
+                          <th scope="col">Grade</th>
+                          <th scope="col">Status</th>
+                          <th scope="col"><span className="sr-only">Actions</span></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.courses.map((course) => (
+                          <tr key={course.id}>
+                            <td data-label="Course">
+                              <strong>{course.code}</strong>
+                              <span>{course.title}</span>
+                            </td>
+                            <td data-label="Grade">
+                              {typeof course.grade === "number"
+                                ? course.grade.toFixed(1) + "%"
+                                : "—"}
+                            </td>
+                            <td data-label="Status">
+                              <label className="sr-only" htmlFor={"status-" + course.id}>
+                                Status for {course.code}
+                              </label>
+                              <select
+                                id={"status-" + course.id}
+                                value={course.status}
+                                disabled={busyCourseId === course.id}
+                                onChange={(event) =>
+                                  void patchCourse(course, {
+                                    status: event.target.value as CourseStatus,
+                                  })
+                                }
+                              >
+                                <option value="completed">Completed</option>
+                                <option value="in_progress">In progress</option>
+                                <option value="planned">Planned</option>
+                                <option value="transfer">Transfer</option>
+                              </select>
+                            </td>
+                            <td className="course-actions">
+                              <button
+                                className="icon-button danger"
+                                type="button"
+                                disabled={busyCourseId === course.id}
+                                aria-label={"Remove " + course.code}
+                                onClick={() => void removeCourse(course)}
+                              >
+                                ×
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              );
+            })}
           </div>
         )}
       </section>

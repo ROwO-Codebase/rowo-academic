@@ -1735,6 +1735,50 @@ button {
   letter-spacing: -0.025em;
 }
 
+.course-term-groups {
+  border-top: 1px solid var(--slate-200);
+}
+
+.course-term-group + .course-term-group {
+  border-top: 8px solid var(--slate-100);
+}
+
+.course-term-heading {
+  display: flex;
+  min-height: 66px;
+  padding: 12px 26px;
+  background: linear-gradient(90deg, var(--indigo-50), var(--slate-50));
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.course-term-heading span,
+.course-term-heading h3 {
+  display: block;
+}
+
+.course-term-heading span {
+  color: var(--indigo-600);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.course-term-heading h3 {
+  margin: 2px 0 0;
+  color: var(--slate-900);
+  font-size: 16px;
+  letter-spacing: -0.015em;
+}
+
+.course-term-heading > strong {
+  color: var(--slate-500);
+  font-size: 10px;
+  font-weight: 750;
+}
+
 .course-table-wrap {
   overflow-x: auto;
 }
@@ -3613,6 +3657,16 @@ button {
 
   .content-card-header {
     padding: 20px 18px 14px;
+  }
+
+  .course-term-heading {
+    min-height: 60px;
+    padding: 11px 18px;
+  }
+
+  .course-term-heading > strong {
+    max-width: 145px;
+    text-align: right;
   }
 
   .course-table,

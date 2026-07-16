@@ -141,6 +141,21 @@ test("tracks multiple plans against one course record and prioritizes overlap", 
   assert.doesNotMatch(courseRecordsSchema, /programId|program_id/);
 });
 
+test("groups the signed-in course record by academic term", async () => {
+  const [dashboard, styles] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(dashboard, /function courseRecordTermSequence/);
+  assert.match(dashboard, /const courseGroups = useMemo/);
+  assert.match(dashboard, /courseRecordTermSequence\(right\) - courseRecordTermSequence\(left\)/);
+  assert.match(dashboard, /className="course-term-group"/);
+  assert.match(dashboard, /Courses recorded for \{group\.term\}/);
+  assert.doesNotMatch(dashboard, /<td data-label="Term">\{course\.term\}<\/td>/);
+  assert.match(styles, /\.course-term-heading/);
+});
+
 test("keeps the optional grade field free of placeholder text", async () => {
   const [dashboard, browser] = await Promise.all([
     source("app/app/AcademicDashboard.tsx"),

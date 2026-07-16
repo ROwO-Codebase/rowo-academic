@@ -1997,6 +1997,16 @@ button {
   gap: 6px;
 }
 
+.program-progress-actions {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
+.danger-text {
+  color: var(--rose-700);
+}
+
 .program-progress-metrics span {
   display: grid;
   min-height: 58px;
@@ -3689,6 +3699,11 @@ button {
 
   .program-progress-metrics {
     width: 100%;
+  }
+
+  .program-progress-actions {
+    width: 100%;
+    justify-items: start;
   }
 
   .program-progress-group {

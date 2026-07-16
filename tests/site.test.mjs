@@ -109,12 +109,13 @@ test("gives signed-in users an account-aware program and course browser", async 
 });
 
 test("tracks multiple plans against one course record and prioritizes overlap", async () => {
-  const [browser, dashboardUi, dashboardRoute, programRoute, schema] =
+  const [browser, dashboardUi, dashboardRoute, programRoute, programDeleteRoute, schema] =
     await Promise.all([
       source("components/GuestAcademicExplorer.tsx"),
       source("app/app/AcademicDashboard.tsx"),
       source("app/api/dashboard/route.ts"),
       source("app/api/profile/program/route.ts"),
+      source("app/api/profile/program/[id]/route.ts"),
       source("db/schema.ts"),
     ]);
 
@@ -129,6 +130,10 @@ test("tracks multiple plans against one course record and prioritizes overlap", 
   assert.match(programRoute, /MAX_SAVED_PROGRAMS/);
   assert.match(programRoute, /currentCalendarPrograms/);
   assert.match(programRoute, /shouldBePrimary/);
+  assert.match(programDeleteRoute, /getLocalSession/);
+  assert.match(programDeleteRoute, /eq\(userPrograms\.userId, session\.user\.localId\)/);
+  assert.match(programDeleteRoute, /nextPrimary/);
+  assert.match(dashboardUi, /Remove plan/);
 
   const courseRecordsStart = schema.indexOf("export const courseRecords");
   const courseRecordsEnd = schema.indexOf("\n);", courseRecordsStart);

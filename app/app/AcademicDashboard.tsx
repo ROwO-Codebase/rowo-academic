@@ -1494,8 +1494,36 @@ function RequirementCard({
   );
 }
 
-function ProgressPanel({ dashboard }: { dashboard: DashboardPayload }) {
+function ProgressPanel({
+  dashboard,
+  onReload,
+  setNotice,
+}: {
+  dashboard: DashboardPayload;
+  onReload: () => Promise<void>;
+  setNotice: (message: string) => void;
+}) {
   const [filter, setFilter] = useState<"all" | "attention">("all");
+  const [busyProgramId, setBusyProgramId] = useState<string | null>(null);
+
+  async function removePlan(program: DashboardProgramProgress) {
+    if (!window.confirm("Stop tracking " + program.profile.programTitle + "?")) {
+      return;
+    }
+    setBusyProgramId(program.profile.id);
+    try {
+      await requestJson<void>(
+        "/api/profile/program/" + encodeURIComponent(program.profile.id),
+        { method: "DELETE" },
+      );
+      setNotice(program.profile.programTitle + " was removed from your tracked plans.");
+      await onReload();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The plan could not be removed.");
+    } finally {
+      setBusyProgramId(null);
+    }
+  }
 
   return (
     <div className="dashboard-panel">
@@ -1551,22 +1579,32 @@ function ProgressPanel({ dashboard }: { dashboard: DashboardPayload }) {
                       .join(" · ")}
                   </p>
                 </div>
-                {program.summary && (
-                  <div className="program-progress-metrics" aria-label="Plan progress summary">
-                    <span>
-                      <strong>{program.summary.requirementsMet}</strong>
-                      requirements met
-                    </span>
-                    <span>
-                      <strong>{program.summary.requirementsTotal}</strong>
-                      evaluated
-                    </span>
-                    <span>
-                      <strong>{program.summary.requirementsUnknown}</strong>
-                      need review
-                    </span>
-                  </div>
-                )}
+                <div className="program-progress-actions">
+                  {program.summary && (
+                    <div className="program-progress-metrics" aria-label="Plan progress summary">
+                      <span>
+                        <strong>{program.summary.requirementsMet}</strong>
+                        requirements met
+                      </span>
+                      <span>
+                        <strong>{program.summary.requirementsTotal}</strong>
+                        evaluated
+                      </span>
+                      <span>
+                        <strong>{program.summary.requirementsUnknown}</strong>
+                        need review
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    className="text-button danger-text"
+                    type="button"
+                    disabled={busyProgramId === program.profile.id}
+                    onClick={() => void removePlan(program)}
+                  >
+                    {busyProgramId === program.profile.id ? "Removing…" : "Remove plan"}
+                  </button>
+                </div>
               </header>
 
               {program.calendarMismatch ? (
@@ -2382,7 +2420,11 @@ export function AcademicDashboard() {
               />
             )}
             {activeTab === "progress" && (
-              <ProgressPanel dashboard={dashboard} />
+              <ProgressPanel
+                dashboard={dashboard}
+                onReload={loadDashboard}
+                setNotice={setNotice}
+              />
             )}
             {activeTab === "planner" && (
               <PlannerPanel

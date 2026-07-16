@@ -219,6 +219,15 @@ export interface RequirementDocument {
 
 export type TriState = "MET" | "NOT_MET" | "UNKNOWN";
 
+export interface RequirementReferenceEvaluation {
+  ordinal: number | null;
+  targetType: string;
+  targetPid: string | null;
+  targetCode: string | null;
+  state: TriState;
+  reason: string;
+}
+
 export type StudentCourseStatus =
   | "completed"
   | "in_progress"
@@ -264,6 +273,7 @@ export interface RequirementNodeEvaluation {
   state: TriState;
   provisionalState?: TriState;
   reason: string;
+  referenceEvaluations: RequirementReferenceEvaluation[];
   matchedCourseCodes: string[];
   unmetCourseCodes: string[];
   unknownReasons: string[];

@@ -139,6 +139,101 @@ test("grade-qualified courses distinguish met, failed, and unknown grades", () =
   assert.equal(missing.state, "UNKNOWN");
 });
 
+test("evaluates the real partial 85 percent AST from completed signed-in records", () => {
+  const gradeChoice = node("course_completed", {
+    evaluability: "partial",
+    parse_status: "partial",
+    text: "Earned a minimum grade of 85% in at least 1 of the following:",
+    logic: "at_least",
+    min_count: 1,
+    min_grade: 85,
+    refs: [reference("CS136"), reference("CS146")],
+    numeric_constraints: [
+      {
+        metric: "grade_percentage",
+        qualifier: "minimum",
+        numeric_value: 85,
+        unit: "percent",
+      },
+    ],
+  });
+  const gradeDocument = document(gradeChoice, {
+    parseStatus: "partial",
+    evaluability: "mixed",
+    sourceMatchesCurrentPayload: true,
+  });
+
+  const passing = evaluateRequirementDocuments(
+    [gradeDocument],
+    context([
+      {
+        coursePid: "cs136-pid",
+        courseCode: "CS136",
+        status: "completed",
+        gradePercent: 85,
+      },
+    ]),
+  );
+  const belowMinimum = evaluateRequirementDocuments(
+    [gradeDocument],
+    context([
+      {
+        coursePid: "cs136-pid",
+        courseCode: "CS136",
+        status: "completed",
+        gradePercent: 84,
+      },
+    ]),
+  );
+  const notCompleted = evaluateRequirementDocuments(
+    [gradeDocument],
+    context([
+      {
+        coursePid: "cs136-pid",
+        courseCode: "CS136",
+        status: "in_progress",
+        gradePercent: 95,
+      },
+    ]),
+  );
+  const missingGrade = evaluateRequirementDocuments(
+    [gradeDocument],
+    context([
+      {
+        coursePid: "cs136-pid",
+        courseCode: "CS136",
+        status: "completed",
+      },
+    ]),
+  );
+
+  assert.equal(passing.state, "MET");
+  assert.equal(passing.documents[0].root.referenceEvaluations[0].state, "MET");
+  assert.match(
+    passing.documents[0].root.referenceEvaluations[0].reason,
+    /completed with 85%/,
+  );
+  assert.equal(belowMinimum.state, "NOT_MET");
+  assert.equal(
+    belowMinimum.documents[0].root.referenceEvaluations[0].state,
+    "NOT_MET",
+  );
+  assert.match(
+    belowMinimum.documents[0].root.referenceEvaluations[0].reason,
+    /84%; 85% is required/,
+  );
+  assert.equal(notCompleted.state, "NOT_MET");
+  assert.match(
+    notCompleted.documents[0].root.referenceEvaluations[0].reason,
+    /has not been completed/,
+  );
+  assert.equal(missingGrade.state, "UNKNOWN");
+  assert.match(
+    missingGrade.documents[0].root.referenceEvaluations[0].reason,
+    /grade.*missing/i,
+  );
+});
+
 test("corequisites accept current enrolment while prerequisites do not", () => {
   const enrolled = context([
     { coursePid: "cs135-pid", courseCode: "CS135", status: "enrolled" },

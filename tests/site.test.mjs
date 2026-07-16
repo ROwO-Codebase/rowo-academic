@@ -128,6 +128,24 @@ test("renders actual requirement AST nodes as cascaded linked detail trees", asy
   assert.match(styles, /\.requirement-reference-list/);
 });
 
+test("highlights evaluated leaf conditions under unmet AST parents", async () => {
+  const [tree, evaluator, styles, courseDetail] = await Promise.all([
+    source("components/RequirementTree.tsx"),
+    source("lib/requirements.ts"),
+    source("app/globals.css"),
+    source("app/api/catalog/courses/[pid]/route.ts"),
+  ]);
+
+  assert.match(tree, /findReferenceEvaluation/);
+  assert.match(tree, /state && state !== "MET"/);
+  assert.match(tree, /requirement-leaf-reason/);
+  assert.match(evaluator, /referenceEvaluations/);
+  assert.match(evaluator, /gradeMinimum != null[\s\S]*?course\.status === "completed"/);
+  assert.match(evaluator, /hasVerifiedPartialGradeSemantics/);
+  assert.match(courseDetail, /gradePercent: gradePercent\(record\.grade\)/);
+  assert.match(styles, /\.leaf-state-not_met/);
+});
+
 test("fits long Browse codes and links course details to external resources", async () => {
   const [browser, styles, links] = await Promise.all([
     source("components/GuestAcademicExplorer.tsx"),

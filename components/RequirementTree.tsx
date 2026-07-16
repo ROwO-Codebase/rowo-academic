@@ -1,5 +1,6 @@
 import type {
   RequirementDisplayReference,
+  RequirementReferenceEvaluation,
   TriState,
 } from "@/lib/types";
 
@@ -14,6 +15,7 @@ export interface RequirementTreeNodeData {
   children: RequirementTreeNodeData[];
   state?: TriState;
   reason?: string;
+  referenceEvaluations?: RequirementReferenceEvaluation[];
 }
 
 const stateMeta: Record<TriState, { label: string; symbol: string }> = {
@@ -72,11 +74,40 @@ function RequirementTreeNode({
       )}
       {node.references.length > 0 && (
         <ul className="requirement-reference-list">
-          {node.references.map((reference, index) => (
-            <li key={referenceKey(reference, index)}>
-              <RequirementReferenceLink reference={reference} />
-            </li>
-          ))}
+          {node.references.map((reference, index) => {
+            const referenceEvaluation = state && state !== "MET"
+              ? findReferenceEvaluation(evaluated ?? node, reference, index)
+              : undefined;
+            return (
+              <li
+                key={referenceKey(reference, index)}
+                className={referenceEvaluation
+                  ? "leaf-state-" + referenceEvaluation.state.toLowerCase()
+                  : undefined}
+              >
+                <div className="requirement-reference-row">
+                  {referenceEvaluation && (
+                    <span
+                      className={
+                        "requirement-node-state requirement-reference-state state-" +
+                        referenceEvaluation.state.toLowerCase()
+                      }
+                      title={referenceEvaluation.reason}
+                      aria-label={stateMeta[referenceEvaluation.state].label}
+                    >
+                      {stateMeta[referenceEvaluation.state].symbol}
+                    </span>
+                  )}
+                  <RequirementReferenceLink reference={reference} />
+                </div>
+                {referenceEvaluation && (
+                  <small className="requirement-leaf-reason">
+                    {referenceEvaluation.reason}
+                  </small>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {node.children.length > 0 && (
@@ -202,4 +233,17 @@ function referenceKey(reference: RequirementDisplayReference, index: number) {
     reference.targetCode,
     reference.ordinal ?? index,
   ].join(":");
+}
+
+function findReferenceEvaluation(
+  node: RequirementTreeNodeData,
+  reference: RequirementDisplayReference,
+  index: number,
+): RequirementReferenceEvaluation | undefined {
+  const evaluations = node.referenceEvaluations ?? [];
+  return evaluations.find((evaluation) =>
+    Boolean(reference.targetPid && evaluation.targetPid === reference.targetPid) ||
+    Boolean(reference.targetCode && evaluation.targetCode === reference.targetCode) ||
+    (reference.ordinal != null && evaluation.ordinal === reference.ordinal)) ??
+    evaluations[index];
 }

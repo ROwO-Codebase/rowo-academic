@@ -11,6 +11,7 @@ import type {
   RequirementNodeEvaluation,
   RequirementNumericConstraint,
   RequirementReference,
+  RequirementReferenceEvaluation,
   StudentCourseRecord,
   TriState,
 } from "./types";
@@ -131,9 +132,10 @@ export function evaluateRequirementDocument(
 
   const root = evaluateRequirementNode(document.ast.root, context, options);
   const computedState = root.state;
-  const incomplete = document.parseStatus !== "parsed" ||
-    document.evaluability === "mixed" || document.evaluability === "unknown" ||
-    document.sourceMatchesCurrentPayload === false;
+  const declaredIncomplete = document.parseStatus !== "parsed" ||
+    document.evaluability === "mixed" || document.evaluability === "unknown";
+  const incomplete = document.sourceMatchesCurrentPayload === false ||
+    (declaredIncomplete && !hasVerifiedPartialGradeSemantics(document));
   const state = incomplete && computedState === MET ? UNKNOWN : computedState;
   return {
     documentId: document.documentId,
@@ -283,38 +285,71 @@ function evaluatePositiveCourseNode(
   const matched: string[] = [];
   const unmet: string[] = [];
   const unknownReasons: string[] = [];
+  const referenceEvaluations: RequirementReferenceEvaluation[] = [];
   const gradeMinimum = minimumGrade(node);
 
   for (const reference of references) {
     const code = referenceCode(reference);
     if (!isResolved(reference)) {
       states.push(UNKNOWN);
-      unknownReasons.push(`Unresolved course reference${code ? ` ${code}` : ""}.`);
+      const reason = `Unresolved course reference${code ? ` ${code}` : ""}.`;
+      unknownReasons.push(reason);
+      referenceEvaluations.push(referenceResult(reference, UNKNOWN, reason));
       continue;
     }
     const courses = matchingCourses(context, reference);
     const accepted = courses.filter((course) =>
-      courseSatisfiesPositiveNode(course, node.node_type, options));
+      gradeMinimum != null
+        ? course.status === "completed"
+        : courseSatisfiesPositiveNode(course, node.node_type, options));
     if (accepted.length === 0) {
       states.push(NOT_MET);
       if (code) unmet.push(code);
+      referenceEvaluations.push(referenceResult(
+        reference,
+        NOT_MET,
+        courses.length === 0
+          ? `${code || "The course"} is not in the completed course record.`
+          : gradeMinimum != null
+            ? `${code || "The course"} is recorded but has not been completed.`
+            : `${code || "The course"} does not have an accepted completion status.`,
+      ));
       continue;
     }
     if (gradeMinimum != null) {
-      if (accepted.some((course) =>
-        course.gradePercent != null && course.gradePercent >= gradeMinimum)) {
+      const passing = accepted.find((course) =>
+        course.gradePercent != null && course.gradePercent >= gradeMinimum);
+      if (passing) {
         states.push(MET);
         if (code) matched.push(code);
+        referenceEvaluations.push(referenceResult(
+          reference,
+          MET,
+          `${code || "The course"} was completed with ${formatGrade(passing.gradePercent as number)}, meeting the ${formatGrade(gradeMinimum)} minimum.`,
+        ));
       } else if (accepted.some((course) => course.gradePercent == null)) {
         states.push(UNKNOWN);
-        unknownReasons.push(`A grade for ${code || "a referenced course"} is missing.`);
+        const reason = `A grade for ${code || "a referenced course"} is missing.`;
+        unknownReasons.push(reason);
+        referenceEvaluations.push(referenceResult(reference, UNKNOWN, reason));
       } else {
         states.push(NOT_MET);
         if (code) unmet.push(code);
+        const highestGrade = Math.max(...accepted.map((course) => course.gradePercent as number));
+        referenceEvaluations.push(referenceResult(
+          reference,
+          NOT_MET,
+          `${code || "The course"} was completed with ${formatGrade(highestGrade)}; ${formatGrade(gradeMinimum)} is required.`,
+        ));
       }
     } else {
       states.push(MET);
       if (code) matched.push(code);
+      referenceEvaluations.push(referenceResult(
+        reference,
+        MET,
+        `${code || "The course"} has an accepted completion status.`,
+      ));
     }
   }
 
@@ -327,6 +362,7 @@ function evaluatePositiveCourseNode(
   );
   return {
     ...result(node, state, courseStateReason(state), [], unknownReasons),
+    referenceEvaluations,
     matchedCourseCodes: unique(matched),
     unmetCourseCodes: unique(unmet),
   };
@@ -346,11 +382,14 @@ function evaluateForbiddenCourseNode(
   const violationStates: TriState[] = [];
   const matched: string[] = [];
   const unknownReasons: string[] = [];
+  const referenceEvaluations: RequirementReferenceEvaluation[] = [];
   for (const reference of references) {
     const code = referenceCode(reference);
     if (!isResolved(reference)) {
       violationStates.push(UNKNOWN);
-      unknownReasons.push(`Unresolved forbidden course${code ? ` ${code}` : ""}.`);
+      const reason = `Unresolved forbidden course${code ? ` ${code}` : ""}.`;
+      unknownReasons.push(reason);
+      referenceEvaluations.push(referenceResult(reference, UNKNOWN, reason));
       continue;
     }
     const violation = matchingCourses(context, reference).some((course) =>
@@ -358,6 +397,13 @@ function evaluateForbiddenCourseNode(
       course.status === "enrolled" || (options.includePlanned && course.status === "planned"));
     violationStates.push(violation ? MET : NOT_MET);
     if (violation && code) matched.push(code);
+    referenceEvaluations.push(referenceResult(
+      reference,
+      violation ? NOT_MET : MET,
+      violation
+        ? `${code || "The course"} is present and violates this exclusion.`
+        : `${code || "The course"} is not present.`,
+    ));
   }
   const state = aggregateStates(violationStates, "none", 0, 0);
   return {
@@ -372,6 +418,7 @@ function evaluateForbiddenCourseNode(
       [],
       unknownReasons,
     ),
+    referenceEvaluations,
     matchedCourseCodes: unique(matched),
   };
 }
@@ -405,9 +452,34 @@ function evaluateProgramNode(
         numberOrNull(node.min_count),
         numberOrNull(node.max_count),
       );
-  return result(node, state, forbidden
+  const evaluation = result(node, state, forbidden
     ? "Program exclusion check completed."
     : "Program enrolment check completed.");
+  evaluation.referenceEvaluations = references.map((reference, index) => {
+    const presenceState = presence[index];
+    const referenceState = presenceState === UNKNOWN
+      ? UNKNOWN
+      : forbidden
+        ? presenceState === MET ? NOT_MET : MET
+        : presenceState;
+    const label = String(
+      reference.target_code ?? reference.target_title ?? "The program",
+    );
+    return referenceResult(
+      reference,
+      referenceState,
+      referenceState === UNKNOWN
+        ? `${label} could not be resolved.`
+        : referenceState === MET
+          ? forbidden
+            ? `${label} is not among the tracked programs.`
+            : `${label} is among the tracked programs.`
+          : forbidden
+            ? `${label} is among the tracked programs and violates this exclusion.`
+            : `${label} is not among the tracked programs.`,
+    );
+  });
+  return evaluation;
 }
 
 function evaluateOpaqueProgramRule(
@@ -668,6 +740,7 @@ function result(
     references: displayReferences(node),
     state,
     reason,
+    referenceEvaluations: [],
     matchedCourseCodes: unique(children.flatMap((child) => child.matchedCourseCodes)),
     unmetCourseCodes: unique(children.flatMap((child) => child.unmetCourseCodes)),
     unknownReasons: unique([
@@ -693,12 +766,77 @@ function displayReferences(node: RequirementNode): RequirementDisplayReference[]
   }));
 }
 
+function referenceResult(
+  reference: RequirementReference,
+  state: TriState,
+  reason: string,
+): RequirementReferenceEvaluation {
+  return {
+    ordinal: numberOrNull(reference.ordinal),
+    targetType: String(reference.target_type ?? "unknown"),
+    targetPid: stringOrNull(reference.target_pid),
+    targetCode: stringOrNull(reference.target_code),
+    state,
+    reason,
+  };
+}
+
+function isVerifiedGradeCourseNode(node: RequirementNode): boolean {
+  if (!["course_completed", "course_completed_or_enrolled", "course_pool"].includes(
+    node.node_type,
+  )) return false;
+  const gradeMinimum = minimumGrade(node);
+  if (gradeMinimum == null || gradeMinimum < 0 || gradeMinimum > 100) return false;
+  const references = courseReferences(node);
+  if (references.length === 0 || references.some((reference) => !isResolved(reference))) {
+    return false;
+  }
+  const logic = String(
+    node.logic ?? node.operator ?? (node.node_type === "course_pool" ? "any" : "all"),
+  );
+  if (!["all", "any", "at_least"].includes(logic)) return false;
+  if (logic === "at_least" && numberOrNull(node.min_count) == null) return false;
+  return (node.numeric_constraints ?? []).every(
+    (constraint) => constraintKind(constraint) === "grade_percentage",
+  );
+}
+
+function hasVerifiedPartialGradeSemantics(document: RequirementDocument): boolean {
+  if (
+    document.parseStatus !== "partial" ||
+    document.evaluability !== "mixed" ||
+    document.warnings.length > 0 ||
+    !document.ast.root
+  ) return false;
+
+  let foundVerifiedGradeNode = false;
+  let foundUnsupportedPartialNode = false;
+  const visit = (node: RequirementNode) => {
+    const evaluability = String(node.evaluability ?? "").toLowerCase();
+    const parseStatus = String(node.parse_status ?? "").toLowerCase();
+    const partial = ["unknown", "manual", "partial", "mixed"].includes(evaluability) ||
+      ["unparsed", "partial"].includes(parseStatus);
+    if (partial) {
+      if (isVerifiedGradeCourseNode(node)) foundVerifiedGradeNode = true;
+      else foundUnsupportedPartialNode = true;
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(document.ast.root);
+  return foundVerifiedGradeNode && !foundUnsupportedPartialNode;
+}
+
 function isUncertain(node: RequirementNode): boolean {
+  if (isVerifiedGradeCourseNode(node)) return false;
   const evaluability = String(node.evaluability ?? "").toLowerCase();
   const parseStatus = String(node.parse_status ?? "").toLowerCase();
   return ["unknown", "manual", "partial", "mixed"].includes(evaluability) ||
     ["unparsed", "partial"].includes(parseStatus) ||
     node.node_type === "opaque" || node.node_type === "scope_constraint";
+}
+
+function formatGrade(value: number): string {
+  return (Number.isInteger(value) ? String(value) : value.toFixed(1)) + "%";
 }
 
 function collectNodeCodes(node: RequirementNodeEvaluation, output: string[]): void {

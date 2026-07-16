@@ -1534,6 +1534,44 @@ button {
   content: "";
 }
 
+.requirement-reference-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.requirement-reference-state {
+  margin-top: 1px;
+}
+
+.requirement-leaf-reason {
+  display: block;
+  margin: 3px 0 0 24px;
+  color: var(--slate-500);
+  font-size: 9px;
+}
+
+.requirement-reference-list > li.leaf-state-not_met::before {
+  background: var(--rose-600);
+}
+
+.requirement-reference-list > li.leaf-state-not_met .requirement-reference-link,
+.requirement-reference-list > li.leaf-state-not_met .requirement-leaf-reason {
+  color: var(--rose-700);
+}
+
+.requirement-reference-list > li.leaf-state-unknown::before {
+  background: var(--amber-600);
+}
+
+.requirement-reference-list > li.leaf-state-unknown .requirement-leaf-reason {
+  color: var(--amber-800);
+}
+
+.requirement-reference-list > li.leaf-state-met::before {
+  background: var(--emerald-600);
+}
+
 .requirement-child-list.root-children {
   margin: 0;
   padding: 0;

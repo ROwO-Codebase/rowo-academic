@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  type FormEvent,
+} from "react";
 import type {
   AcademicCourse,
   AcademicProgram,
@@ -11,6 +17,7 @@ import { Brand } from "./Brand";
 
 type GuestTab = "plans" | "courses";
 type LoadState = "idle" | "loading" | "ready" | "error";
+type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
 
 interface ProgramSearchPayload {
   programs: AcademicProgram[];
@@ -31,17 +38,40 @@ interface CourseDetailPayload {
   course: AcademicCourse;
   requirements: PublicRequirementSummary[];
   catalog: CatalogMetadata;
+  eligibility: CourseEligibilityPayload | null;
+  viewer: {
+    signedIn: boolean;
+    recordedCount: number;
+  };
 }
 
-class GuestApiError extends Error {}
+interface CourseEligibilityPayload {
+  state: "MET" | "NOT_MET" | "UNKNOWN";
+  eligible: boolean;
+  needsReview: boolean;
+  unmetCourseCodes: string[];
+  unknownReasons: string[];
+}
 
-async function requestGuestJson<T>(
+interface CourseMutationPayload {
+  success: boolean;
+  eligibility?: CourseEligibilityPayload | null;
+}
+
+class BrowserApiError extends Error {}
+
+async function requestBrowserJson<T>(
   input: string,
-  signal?: AbortSignal,
+  init: RequestInit = {},
 ): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const response = await fetch(input, {
-    headers: { Accept: "application/json" },
-    signal,
+    ...init,
+    headers,
   });
   const payload = (await response.json().catch(() => null)) as
     | { error?: string | { message?: string } }
@@ -51,7 +81,7 @@ async function requestGuestJson<T>(
       typeof payload?.error === "string"
         ? payload.error
         : payload?.error?.message || "The academic calendar could not be loaded.";
-    throw new GuestApiError(message);
+    throw new BrowserApiError(message);
   }
   return payload as T;
 }
@@ -196,7 +226,7 @@ function RequirementInformation({
   );
 }
 
-function GuestPlanExplorer() {
+function PlanExplorer({ signedIn = false }: { signedIn?: boolean }) {
   const searchId = useId();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<AcademicProgram[]>([]);
@@ -218,9 +248,9 @@ function GuestPlanExplorer() {
       setSearchState("loading");
       setSearchError("");
       try {
-        const payload = await requestGuestJson<ProgramSearchPayload>(
+        const payload = await requestBrowserJson<ProgramSearchPayload>(
           "/api/catalog/programs?q=" + encodeURIComponent(cleanQuery) + "&limit=12",
-          signal,
+          { signal },
         );
         setResults(payload.programs || []);
         setCatalog(payload.catalog || null);
@@ -249,7 +279,7 @@ function GuestPlanExplorer() {
     setDetailState("loading");
     setDetailError("");
     try {
-      const payload = await requestGuestJson<ProgramDetailPayload>(
+      const payload = await requestBrowserJson<ProgramDetailPayload>(
         "/api/catalog/programs/" + encodeURIComponent(program.pid),
       );
       setDetail(payload);
@@ -264,18 +294,20 @@ function GuestPlanExplorer() {
     <div className="dashboard-panel guest-explorer-panel">
       <section className="panel-heading">
         <div>
-          <span className="eyebrow compact">Read-only calendar explorer</span>
+          <span className="eyebrow compact">
+            {signedIn ? "Academic calendar browser" : "Read-only calendar explorer"}
+          </span>
           <h1>Explore a Waterloo plan</h1>
           <p>
             Search majors, minors, options, and other plans, then inspect the
-            requirement information without creating an account.
+            requirement information {signedIn ? "from the active calendar." : "without creating an account."}
           </p>
         </div>
       </section>
 
       <section className="guest-search-layout">
         <div className="program-picker guest-search-card">
-          <div className="picker-step">Guest plan search</div>
+          <div className="picker-step">{signedIn ? "Plan search" : "Guest plan search"}</div>
           <h2>Find a plan</h2>
           <p>Search by plan title or calendar code.</p>
           <label htmlFor={searchId}>Plan name</label>
@@ -396,15 +428,96 @@ function GuestPlanExplorer() {
   );
 }
 
-function GuestCourseExplorer() {
+const courseStatusLabels: Record<CourseStatus, string> = {
+  completed: "Completed",
+  in_progress: "In progress",
+  planned: "Planned",
+  transfer: "Transfer credit",
+};
+
+function CourseEligibilitySummary({
+  eligibility,
+}: {
+  eligibility: CourseEligibilityPayload;
+}) {
+  const content =
+    eligibility.state === "MET"
+      ? {
+          title: "Course requirements satisfied",
+          description:
+            "Based on the courses already added to your account, this course’s parsed requirements are satisfied.",
+        }
+      : eligibility.state === "NOT_MET"
+        ? {
+            title: "Course requirements not yet satisfied",
+            description:
+              "Your saved course record does not yet satisfy every parsed requirement for this course.",
+          }
+        : {
+            title: "Requirement status needs review",
+            description:
+              "The calendar includes requirement text that cannot be evaluated automatically with complete confidence.",
+          };
+
+  return (
+    <aside
+      className={"browser-eligibility eligibility-" + eligibility.state}
+      aria-live="polite"
+    >
+      <div>
+        <strong>{content.title}</strong>
+        <p>{content.description}</p>
+      </div>
+      {eligibility.unmetCourseCodes.length > 0 && (
+        <div className="course-code-list" aria-label="Courses still needed">
+          {eligibility.unmetCourseCodes.map((code) => (
+            <span key={code}>{code}</span>
+          ))}
+        </div>
+      )}
+      {eligibility.unknownReasons.length > 0 && (
+        <ul>
+          {eligibility.unknownReasons.slice(0, 3).map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      )}
+    </aside>
+  );
+}
+
+function CourseExplorer({
+  signedIn = false,
+  initialQuery = "",
+  initialTerm = "",
+  initialStatus = "completed",
+  termOptions = [],
+  onAdded,
+  setNotice,
+}: {
+  signedIn?: boolean;
+  initialQuery?: string;
+  initialTerm?: string;
+  initialStatus?: CourseStatus;
+  termOptions?: string[];
+  onAdded?: () => Promise<void>;
+  setNotice?: (message: string) => void;
+}) {
   const searchId = useId();
-  const [query, setQuery] = useState("");
+  const termListId = useId();
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<AcademicCourse[]>([]);
   const [searchState, setSearchState] = useState<LoadState>("idle");
   const [searchError, setSearchError] = useState("");
   const [detail, setDetail] = useState<CourseDetailPayload | null>(null);
   const [detailState, setDetailState] = useState<LoadState>("idle");
   const [detailError, setDetailError] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [status, setStatus] = useState<CourseStatus>(initialStatus);
+  const [term, setTerm] = useState(initialTerm);
+  const [grade, setGrade] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const searchCourses = useCallback(
     async (searchQuery: string, signal?: AbortSignal) => {
@@ -417,9 +530,9 @@ function GuestCourseExplorer() {
       setSearchState("loading");
       setSearchError("");
       try {
-        const payload = await requestGuestJson<CourseSearchPayload>(
+        const payload = await requestBrowserJson<CourseSearchPayload>(
           "/api/catalog/courses?q=" + encodeURIComponent(cleanQuery) + "&limit=12",
-          signal,
+          { signal },
         );
         setResults(payload.courses || []);
         setSearchState("ready");
@@ -446,8 +559,13 @@ function GuestCourseExplorer() {
   async function openCourse(course: AcademicCourse) {
     setDetailState("loading");
     setDetailError("");
+    setShowAddForm(false);
+    setStatus(initialStatus);
+    setTerm(initialTerm);
+    setGrade("");
+    setFormError("");
     try {
-      const payload = await requestGuestJson<CourseDetailPayload>(
+      const payload = await requestBrowserJson<CourseDetailPayload>(
         "/api/catalog/courses/" + encodeURIComponent(course.pid),
       );
       setDetail(payload);
@@ -458,15 +576,62 @@ function GuestCourseExplorer() {
     }
   }
 
+  async function addCourse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!detail || saving) return;
+    setSaving(true);
+    setFormError("");
+    try {
+      const payload = await requestBrowserJson<CourseMutationPayload>(
+        "/api/courses",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            courseCode: detail.course.code,
+            status,
+            term: term.trim() || null,
+            grade: grade.trim() || null,
+          }),
+        },
+      );
+      if (!payload.success) {
+        throw new BrowserApiError("The course could not be added.");
+      }
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              viewer: {
+                ...current.viewer,
+                recordedCount: current.viewer.recordedCount + 1,
+              },
+            }
+          : current,
+      );
+      setShowAddForm(false);
+      setNotice?.(
+        detail.course.code + " was added as " + courseStatusLabels[status].toLowerCase() + ".",
+      );
+      await onAdded?.();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "The course could not be added.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="dashboard-panel guest-explorer-panel">
       <section className="panel-heading">
         <div>
-          <span className="eyebrow compact">Read-only calendar explorer</span>
-          <h1>Check course information</h1>
+          <span className="eyebrow compact">
+            {signedIn ? "Account-aware calendar browser" : "Read-only calendar explorer"}
+          </span>
+          <h1>{signedIn ? "Browse Waterloo courses" : "Check course information"}</h1>
           <p>
-            Search the active Waterloo calendar and inspect descriptions,
-            units, prerequisites, corequisites, and antirequisites as a guest.
+            {signedIn
+              ? "Search the active calendar and check requirements against the courses already added to your account."
+              : "Search the active Waterloo calendar and inspect descriptions, units, prerequisites, corequisites, and antirequisites as a guest."}
           </p>
         </div>
       </section>
@@ -561,6 +726,98 @@ function GuestCourseExplorer() {
               <p className="guest-description">
                 {detail.course.description || "No course description is available."}
               </p>
+              {signedIn && detail.eligibility && (
+                <CourseEligibilitySummary eligibility={detail.eligibility} />
+              )}
+              {signedIn && (
+                <div className="course-detail-actions">
+                  <div>
+                    {detail.viewer.recordedCount > 0 && (
+                      <span className="course-recorded-note">
+                        Already in your course record {detail.viewer.recordedCount}{" "}
+                        {detail.viewer.recordedCount === 1 ? "time" : "times"}.
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    className="button button-primary"
+                    type="button"
+                    onClick={() => {
+                      setShowAddForm((visible) => !visible);
+                      setFormError("");
+                    }}
+                  >
+                    {showAddForm ? "Close add form" : "Add to my courses"}
+                  </button>
+                </div>
+              )}
+              {signedIn && showAddForm && (
+                <form className="add-course-form detail-add-course-form" onSubmit={addCourse}>
+                  <div className="form-grid">
+                    <label>
+                      Status
+                      <select
+                        value={status}
+                        onChange={(event) => {
+                          const nextStatus = event.target.value as CourseStatus;
+                          setStatus(nextStatus);
+                          if (nextStatus === "planned" || nextStatus === "in_progress") {
+                            setGrade("");
+                          }
+                        }}
+                      >
+                        {(Object.entries(courseStatusLabels) as Array<[CourseStatus, string]>).map(
+                          ([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                    <label>
+                      Term
+                      <input
+                        value={term}
+                        onChange={(event) => setTerm(event.target.value)}
+                        list={termListId}
+                        placeholder="Fall 2026"
+                        required={status === "planned" || status === "in_progress"}
+                      />
+                      <datalist id={termListId}>
+                        {termOptions.map((option) => <option key={option} value={option} />)}
+                      </datalist>
+                    </label>
+                    <label>
+                      Grade <span>(optional)</span>
+                      <div className="grade-field">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={grade}
+                          onChange={(event) => setGrade(event.target.value)}
+                          disabled={status !== "completed" && status !== "transfer"}
+                        />
+                        <span aria-hidden="true">%</span>
+                      </div>
+                    </label>
+                  </div>
+                  {formError && <div className="form-error" role="alert">{formError}</div>}
+                  <div className="form-actions">
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={() => setShowAddForm(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button className="button button-primary" type="submit" disabled={saving}>
+                      {saving ? "Adding…" : "Add course"}
+                    </button>
+                  </div>
+                </form>
+              )}
               <div className="guest-detail-section-heading">
                 <h3>Requisite information</h3>
                 <span>{detail.requirements.length} groups</span>
@@ -573,6 +830,77 @@ function GuestCourseExplorer() {
           )}
         </section>
       </section>
+    </div>
+  );
+}
+
+export function SignedInAcademicBrowser({
+  dashboard,
+  initialQuery,
+  initialTerm,
+  initialStatus,
+  onAdded,
+  setNotice,
+}: {
+  dashboard: {
+    terms: Array<{ label: string }>;
+    courses: Array<{ term: string | null }>;
+  };
+  initialQuery: string;
+  initialTerm: string;
+  initialStatus: CourseStatus;
+  onAdded: () => Promise<void>;
+  setNotice: (message: string) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<GuestTab>("courses");
+  const termOptions = Array.from(
+    new Set([
+      ...dashboard.terms.map((term) => term.label),
+      ...dashboard.courses.map((course) => course.term || ""),
+    ]),
+  ).filter(Boolean);
+
+  return (
+    <div className="signed-browser">
+      <section className="browser-view-switcher" aria-label="Academic browser views">
+        <div>
+          <strong>Academic browser</strong>
+          <small>Explore programs or find a course to add.</small>
+        </div>
+        <div className="segmented-control" role="tablist" aria-label="Browse programs or courses">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "plans"}
+            className={activeTab === "plans" ? "active" : ""}
+            onClick={() => setActiveTab("plans")}
+          >
+            Plans
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "courses"}
+            className={activeTab === "courses" ? "active" : ""}
+            onClick={() => setActiveTab("courses")}
+          >
+            Courses
+          </button>
+        </div>
+      </section>
+      {activeTab === "plans" ? (
+        <PlanExplorer signedIn />
+      ) : (
+        <CourseExplorer
+          signedIn
+          initialQuery={initialQuery}
+          initialTerm={initialTerm}
+          initialStatus={initialStatus}
+          termOptions={termOptions}
+          onAdded={onAdded}
+          setNotice={setNotice}
+        />
+      )}
     </div>
   );
 }
@@ -595,7 +923,7 @@ export function GuestAcademicExplorer() {
       <GuestHeader activeTab={activeTab} onTabChange={changeTab} />
       <main id="main-content" className="dashboard-main shell" tabIndex={-1}>
         <GuestNotice />
-        {activeTab === "plans" ? <GuestPlanExplorer /> : <GuestCourseExplorer />}
+        {activeTab === "plans" ? <PlanExplorer /> : <CourseExplorer />}
       </main>
       <GuestTabs
         activeTab={activeTab}

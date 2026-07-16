@@ -1180,6 +1180,47 @@ button {
   text-decoration: underline;
 }
 
+.signed-browser {
+  display: grid;
+  gap: 16px;
+}
+
+.browser-view-switcher {
+  display: flex;
+  padding: 14px 16px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-md);
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.browser-view-switcher strong,
+.browser-view-switcher small {
+  display: block;
+}
+
+.browser-view-switcher strong {
+  color: var(--slate-900);
+  font-size: 13px;
+}
+
+.browser-view-switcher small {
+  margin-top: 2px;
+  color: var(--slate-500);
+  font-size: 10px;
+}
+
+.browser-view-switcher .segmented-control {
+  min-width: 190px;
+}
+
+.browser-view-switcher .segmented-control button {
+  flex: 1;
+}
+
 .guest-explorer-panel .panel-heading {
   margin-bottom: 22px;
 }
@@ -1275,6 +1316,79 @@ button {
 .guest-description {
   margin: 18px 0 0;
   white-space: pre-line;
+}
+
+.browser-eligibility {
+  display: grid;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-sm);
+  background: var(--slate-50);
+  gap: 10px;
+}
+
+.browser-eligibility strong {
+  color: var(--slate-900);
+  font-size: 12px;
+}
+
+.browser-eligibility p,
+.browser-eligibility ul {
+  margin: 3px 0 0;
+  color: var(--slate-600);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.browser-eligibility ul {
+  padding-left: 17px;
+}
+
+.browser-eligibility.eligibility-MET {
+  border-color: var(--emerald-100);
+  background: var(--emerald-50);
+}
+
+.browser-eligibility.eligibility-MET strong {
+  color: var(--emerald-700);
+}
+
+.browser-eligibility.eligibility-NOT_MET {
+  border-color: var(--rose-100);
+  background: var(--rose-50);
+}
+
+.browser-eligibility.eligibility-NOT_MET strong {
+  color: var(--rose-700);
+}
+
+.browser-eligibility.eligibility-UNKNOWN {
+  border-color: var(--amber-100);
+  background: var(--amber-50);
+}
+
+.browser-eligibility.eligibility-UNKNOWN strong {
+  color: var(--amber-800);
+}
+
+.course-detail-actions {
+  display: flex;
+  margin-top: 16px;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.course-recorded-note {
+  color: var(--slate-500);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.detail-add-course-form {
+  margin-bottom: 4px;
 }
 
 .guest-detail-section-heading {
@@ -3159,6 +3273,17 @@ button {
 }
 
 @media (max-width: 680px) {
+  .browser-view-switcher,
+  .course-detail-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .browser-view-switcher .segmented-control,
+  .course-detail-actions .button {
+    width: 100%;
+  }
+
   .shell,
   .site-header-inner {
     padding-inline: 16px;

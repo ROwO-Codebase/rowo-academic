@@ -11,7 +11,10 @@ import {
 } from "react";
 import Link from "next/link";
 import { Brand } from "../../components/Brand";
-import { GuestAcademicExplorer } from "../../components/GuestAcademicExplorer";
+import {
+  GuestAcademicExplorer,
+  SignedInAcademicBrowser as CatalogPanel,
+} from "../../components/GuestAcademicExplorer";
 
 type TabId = "overview" | "progress" | "planner" | "catalog";
 type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
@@ -251,7 +254,7 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "progress", label: "Progress" },
   { id: "planner", label: "Planner" },
-  { id: "catalog", label: "Catalog" },
+  { id: "catalog", label: "Browse" },
 ];
 
 const courseStatusLabels: Record<CourseStatus, string> = {
@@ -1236,7 +1239,7 @@ function OverviewPanel({
             <h3>No courses yet</h3>
             <p>Add a completed, in-progress, or planned course to begin.</p>
             <button className="button button-primary" type="button" onClick={onOpenCatalog}>
-              Search the catalog
+              Browse courses
             </button>
           </div>
         ) : (
@@ -1592,7 +1595,7 @@ function PlannerPanel({
             type="button"
             onClick={() => onAddToTerm("")}
           >
-            Search the catalog
+            Browse courses
           </button>
         </div>
       ) : (
@@ -1683,7 +1686,7 @@ function PlannerPanel({
   );
 }
 
-function CatalogPanel({
+function LegacyCatalogPanel({
   dashboard,
   initialQuery,
   initialTerm,
@@ -2047,6 +2050,8 @@ function CatalogPanel({
     </div>
   );
 }
+
+void LegacyCatalogPanel;
 
 export function AcademicDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");

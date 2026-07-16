@@ -88,11 +88,36 @@ test("allows guests to inspect plans and courses without exposing personal data 
   assert.match(courseWrites, /getLocalSession/);
 });
 
+test("gives signed-in users an account-aware program and course browser", async () => {
+  const [browser, dashboard, courseDetail] = await Promise.all([
+    source("components/GuestAcademicExplorer.tsx"),
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/api/catalog/courses/[pid]/route.ts"),
+  ]);
+
+  assert.match(browser, /export function SignedInAcademicBrowser/);
+  assert.match(browser, /Account-aware calendar browser/);
+  assert.match(browser, /Course requirements satisfied/);
+  assert.match(browser, /Course requirements not yet satisfied/);
+  assert.match(browser, /Add to my courses/);
+  assert.match(browser, /method: "POST"/);
+  assert.match(dashboard, /\{ id: "catalog", label: "Browse" \}/);
+  assert.match(courseDetail, /validateCourseEligibility/);
+  assert.match(courseDetail, /courseRecords/);
+  assert.match(courseDetail, /private, no-store/);
+  assert.match(courseDetail, /recordedCount/);
+});
+
 test("keeps the optional grade field free of placeholder text", async () => {
-  const dashboard = await source("app/app/AcademicDashboard.tsx");
+  const [dashboard, browser] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("components/GuestAcademicExplorer.tsx"),
+  ]);
 
   assert.doesNotMatch(dashboard, /Completed or transfer only/);
   assert.doesNotMatch(dashboard, /placeholder=\{[\s\S]*?\? "82"/);
+  assert.doesNotMatch(browser, /Completed or transfer only/);
+  assert.doesNotMatch(browser, /placeholder="82"/);
 });
 
 test("includes an initial app-database migration and never stores the SSO token in browser storage", async () => {

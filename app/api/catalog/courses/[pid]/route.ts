@@ -1,12 +1,17 @@
 import { env } from "cloudflare:workers";
+import { eq } from "drizzle-orm";
+import { getUserDb } from "@/db";
+import { courseRecords, userPrograms } from "@/db/schema";
 import {
   AcademicDataError,
   getCatalogMetadata,
   getCourseByPid,
   getCourseRequirementDocuments,
 } from "@/lib/academic";
+import { getLocalSession } from "@/lib/auth";
 import { summarizePublicRequirement } from "@/lib/public-academic";
-import type { AcademicEnvironment } from "@/lib/types";
+import { validateCourseEligibility } from "@/lib/requirements";
+import type { AcademicEnvironment, StudentCourseRecord } from "@/lib/types";
 
 type RouteContext = { params: Promise<{ pid: string }> | { pid: string } };
 
@@ -28,14 +33,34 @@ async function routePid(context: RouteContext): Promise<string> {
   return normalized;
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+function gradePercent(grade: string | null): number | null {
+  if (!grade) return null;
+  const parsed = Number(grade);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+}
+
+function toEvaluationCourse(
+  record: typeof courseRecords.$inferSelect,
+): StudentCourseRecord {
+  return {
+    coursePid: record.coursePid,
+    courseCode: record.courseCode,
+    status: record.status === "transfer" ? "completed" : record.status,
+    gradePercent: gradePercent(record.grade),
+    credits: record.credits,
+    term: record.term,
+  };
+}
+
+export async function GET(request: Request, context: RouteContext) {
   try {
     const pid = await routePid(context);
     const academicEnv = env as unknown as AcademicEnvironment;
-    const [course, requirements, catalog] = await Promise.all([
+    const [course, requirements, catalog, session] = await Promise.all([
       getCourseByPid(academicEnv, pid),
       getCourseRequirementDocuments(academicEnv, pid),
       getCatalogMetadata(academicEnv),
+      getLocalSession(request),
     ]);
     if (!course) {
       return errorResponse("COURSE_NOT_FOUND", "Course not found.", 404);
@@ -43,14 +68,52 @@ export async function GET(_request: Request, context: RouteContext) {
     const { notesHtml: _notesHtml, ...publicCourse } = course;
     void _notesHtml;
 
+    let eligibility = null;
+    let recordedCount = 0;
+    if (session) {
+      const db = getUserDb();
+      const [records, programs] = await Promise.all([
+        db
+          .select()
+          .from(courseRecords)
+          .where(eq(courseRecords.userId, session.user.localId)),
+        db
+          .select()
+          .from(userPrograms)
+          .where(eq(userPrograms.userId, session.user.localId)),
+      ]);
+      recordedCount = records.filter(
+        (record) => record.coursePid === course.pid || record.courseCode === course.code,
+      ).length;
+      eligibility = validateCourseEligibility(requirements, {
+        courses: records.map(toEvaluationCourse),
+        programs: programs.map((program) => ({
+          programPid: program.programPid,
+          programCode: program.programCode,
+          status: "active" as const,
+        })),
+      });
+    }
+
     return Response.json(
       {
         success: true,
         catalog,
         course: publicCourse,
         requirements: requirements.map(summarizePublicRequirement),
+        eligibility,
+        viewer: {
+          signedIn: Boolean(session),
+          recordedCount,
+        },
       },
-      { headers: { "cache-control": "public, max-age=300, s-maxage=900" } },
+      {
+        headers: {
+          "cache-control": session
+            ? "private, no-store"
+            : "public, max-age=300, s-maxage=900",
+        },
+      },
     );
   } catch (error) {
     if (error instanceof InputError) {

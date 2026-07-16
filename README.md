@@ -15,6 +15,12 @@ account. Guest endpoints are read-only and query only `ACADEMIC_DB`; selecting a
 program, recording courses, evaluating a personal plan, and every write to `DB`
 remain behind ROwO sign-in.
 
+Signed-in students use the same Plans and Courses browser from the **Browse**
+tab. A course detail page evaluates its parsed requirements against courses and
+programs already saved to the student's account, clearly marks requirements as
+satisfied, not yet satisfied, or needing review, and can add that course to the
+student's record without leaving the detail page.
+
 ## Architecture
 
 - [vinext](https://github.com/cloudflare/vinext), Vite, React, and TypeScript
@@ -85,10 +91,12 @@ at [`docs/rowo-auth-academic-sso.patch`](docs/rowo-auth-academic-sso.patch).
 Browser code does not call the ROwO API directly, so this integration does not
 require a CORS change.
 
-The public `/api/catalog/programs*` and `/api/catalog/courses*` routes expose
-only bounded, read-only calendar searches and summaries. User dashboards,
-saved programs, course records, and mutations continue to require a valid local
-Academic session.
+The `/api/catalog/programs*` and `/api/catalog/courses*` routes expose bounded,
+read-only calendar searches and summaries to guests. When a valid local session
+is present, a course-detail response also includes an account-specific
+eligibility evaluation and is returned with private, no-store caching. User
+dashboards, saved programs, course records, and mutations continue to require a
+valid local Academic session.
 
 ## Environments and calendar rollover
 

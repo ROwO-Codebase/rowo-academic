@@ -66,8 +66,9 @@ The sign-in flow adapts ROwO's first-party `/sso` fragment handoff:
 1. ROwO returns its existing session JWT in the callback URL fragment.
 2. The callback removes the fragment from browser history immediately and posts
    the token once to the Academic Worker.
-3. The Worker validates it server-to-server with
-   `https://api.rowo.link/api/user/me`, discards it, and creates an opaque,
+3. The Worker validates it through the `ROWO_AUTH` service binding to the
+   production `rowo-auth` Worker (with `https://api.rowo.link/api/user/me` as
+   the local-development fallback), discards it, and creates an opaque,
    HttpOnly Academic session whose token is stored only as a hash in `DB`.
 
 This flow uses `ROWO_WEB_ORIGIN` and `ROWO_API_ORIGIN`. It does not require an

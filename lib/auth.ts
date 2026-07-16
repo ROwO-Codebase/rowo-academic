@@ -24,9 +24,12 @@ const RESERVED_RETURN_PATHS = new Set([
 ]);
 
 type AuthRuntimeBindings = {
+  ROWO_AUTH?: Fetcher;
   ROWO_API_ORIGIN?: string;
   ROWO_WEB_ORIGIN?: string;
 };
+
+type AuthOriginBinding = "ROWO_API_ORIGIN" | "ROWO_WEB_ORIGIN";
 
 type CookieKind = "session" | "sso-state";
 
@@ -154,22 +157,36 @@ export async function validateRowoToken(token: string): Promise<RowoProfile> {
   let response: Response;
   try {
     const meUrl = new URL("/api/user/me", runtimeOrigin("ROWO_API_ORIGIN"));
-    response = await fetch(meUrl, {
+    const request = new Request(meUrl, {
       headers: {
         accept: "application/json",
         authorization: `Bearer ${normalizedToken}`,
       },
       cache: "no-store",
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(8_000),
     });
-  } catch {
+    const rowoAuth = (env as unknown as AuthRuntimeBindings).ROWO_AUTH;
+    response = rowoAuth
+      ? await rowoAuth.fetch(request)
+      : await fetch(request);
+  } catch (error) {
+    console.error(
+      "ROwO verification request failed",
+      error instanceof Error ? `${error.name}: ${error.message}` : "Unknown error",
+    );
     throw new RowoAuthError(
       "ROwO could not be reached to verify this sign-in.",
       502,
     );
   }
 
+  if (response.status >= 300 && response.status < 400) {
+    throw new RowoAuthError(
+      "ROwO returned an unexpected redirect while verifying this sign-in.",
+      502,
+    );
+  }
   if (response.status === 401 || response.status === 403) {
     throw new RowoAuthError("The ROwO sign-in token is invalid or expired.", 401);
   }
@@ -458,7 +475,7 @@ function cookiePolicy(
 }
 
 function runtimeOrigin(
-  key: keyof AuthRuntimeBindings,
+  key: AuthOriginBinding,
 ): string {
   const bindings = env as unknown as AuthRuntimeBindings;
   const fallback =

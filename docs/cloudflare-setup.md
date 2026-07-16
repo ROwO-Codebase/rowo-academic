@@ -69,10 +69,11 @@ third-party OAuth client flow. Before enabling production sign-in, apply
    once to the Academic Worker, and never persists that JWT.
 
 The Worker validates the token server-to-server through
-`https://api.rowo.link/api/user/me`, discards it, and issues a host-only opaque
-session in an HttpOnly cookie. Only a hash of that session token belongs in
-`DB`. Because the browser does not call the API directly, no API CORS change is
-required.
+the `ROWO_AUTH` service binding to the `rowo-auth` Worker, discards it, and
+issues a host-only opaque session in an HttpOnly cookie. Local development
+falls back to `https://api.rowo.link/api/user/me`. Only a hash of the Academic
+session token belongs in `DB`. Because the browser does not call the API
+directly, no API CORS change is required.
 
 ## 4. Runtime configuration
 

@@ -37,11 +37,23 @@ test("keeps user data and the academic calendar in separate D1 bindings", async 
   assert.equal(hostingConfig.r2, null);
   assert.match(wrangler, /"binding": "DB"/);
   assert.match(wrangler, /"binding": "ACADEMIC_DB"/);
+  assert.match(wrangler, /"binding": "ROWO_AUTH"/);
+  assert.match(wrangler, /"service": "rowo-auth"/);
   assert.match(wrangler, /578d593a-d00d-4723-b3de-0659e2388415/);
   assert.match(wrangler, /"ACADEMIC_CATALOG_ID"/);
   assert.match(schema, /catalogId: text\("catalog_id"\)\.notNull\(\)/);
   assert.match(schema, /programPid: text\("program_pid"\)\.notNull\(\)/);
   assert.match(schema, /coursePid: text\("course_pid"\)\.notNull\(\)/);
+});
+
+test("validates ROwO sign-in through the Worker service binding", async () => {
+  const auth = await source("lib/auth.ts");
+
+  assert.match(auth, /ROWO_AUTH\?: Fetcher/);
+  assert.match(auth, /rowoAuth\.fetch\(request\)/);
+  assert.match(auth, /await fetch\(request\)/);
+  assert.match(auth, /redirect: "manual"/);
+  assert.match(auth, /response\.status >= 300 && response\.status < 400/);
 });
 
 test("includes an initial app-database migration and never stores the SSO token in browser storage", async () => {

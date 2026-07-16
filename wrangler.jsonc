@@ -43,6 +43,12 @@
         "ACADEMIC_CATALOG_ID": "663290e835aff7001cc62323",
         "ACADEMIC_CALENDAR_LABEL": "2026"
       },
+      "services": [
+        {
+          "binding": "ROWO_AUTH",
+          "service": "rowo-auth"
+        }
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -74,6 +80,12 @@
         "ACADEMIC_CATALOG_ID": "663290e835aff7001cc62323",
         "ACADEMIC_CALENDAR_LABEL": "2026"
       },
+      "services": [
+        {
+          "binding": "ROWO_AUTH",
+          "service": "rowo-auth"
+        }
+      ],
       "d1_databases": [
         {
           "binding": "DB",

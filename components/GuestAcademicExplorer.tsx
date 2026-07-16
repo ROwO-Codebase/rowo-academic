@@ -14,6 +14,10 @@ import type {
 } from "@/lib/types";
 import type { PublicRequirementSummary } from "@/lib/public-academic";
 import { isNonAcademicCourseCode } from "@/lib/course-records";
+import {
+  uwflowCourseUrl,
+  waterlooCourseOutlineUrl,
+} from "@/lib/course-links";
 import { Brand } from "./Brand";
 import {
   RequirementTree,
@@ -832,7 +836,6 @@ function CourseExplorer({
                           : formatUnits(course.credits ?? course.creditMin)}
                       </small>
                     </span>
-                    <span className="choose-program">View</span>
                   </button>
                 ))}
               </div>
@@ -877,6 +880,24 @@ function CourseExplorer({
               <p className="guest-description">
                 {detail.course.description || "No course description is available."}
               </p>
+              <div className="external-course-links" aria-label="External course resources">
+                <a
+                  className="button button-secondary button-compact"
+                  href={uwflowCourseUrl(detail.course.code)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View on UWFlow
+                </a>
+                <a
+                  className="button button-secondary button-compact"
+                  href={waterlooCourseOutlineUrl(detail.course.code)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View course outline
+                </a>
+              </div>
               {signedIn && detail.eligibility && (
                 <CourseEligibilitySummary eligibility={detail.eligibility} />
               )}

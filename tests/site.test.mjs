@@ -128,6 +128,22 @@ test("renders actual requirement AST nodes as cascaded linked detail trees", asy
   assert.match(styles, /\.requirement-reference-list/);
 });
 
+test("fits long Browse codes and links course details to external resources", async () => {
+  const [browser, styles, links] = await Promise.all([
+    source("components/GuestAcademicExplorer.tsx"),
+    source("app/globals.css"),
+    source("lib/course-links.ts"),
+  ]);
+
+  assert.doesNotMatch(browser, /<span className="choose-program">View<\/span>/);
+  assert.match(browser, /View on UWFlow/);
+  assert.match(browser, /View course outline/);
+  assert.match(styles, /minmax\(64px, max-content\)/);
+  assert.match(styles, /\.external-course-links/);
+  assert.match(links, /https:\/\/uwflow\.com\/course\//);
+  assert.match(links, /https:\/\/outline\.uwaterloo\.ca\/viewer\/\?q=/);
+});
+
 test("tracks multiple plans against one course record and prioritizes overlap", async () => {
   const [browser, dashboardUi, dashboardRoute, programRoute, programDeleteRoute, schema] =
     await Promise.all([

@@ -1,0 +1,9 @@
+diff --git a/apps/main/src/pages/SsoPage.tsx b/apps/main/src/pages/SsoPage.tsx
+--- a/apps/main/src/pages/SsoPage.tsx
++++ b/apps/main/src/pages/SsoPage.tsx
+@@ -9,7 +9,9 @@ const ALLOWED_NEXT_ORIGINS = new Set([
+   'https://developers.rowo.link',
++  'https://academic.rowo.link',
+   'http://localhost:5174',
++  'http://localhost:3000',
+ ]);

@@ -1,0 +1,93 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rowo-academic",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-05-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "vars": {
+    "APP_ENV": "development",
+    "ROWO_WEB_ORIGIN": "https://rowo.link",
+    "ROWO_API_ORIGIN": "https://api.rowo.link",
+    "ACADEMIC_CATALOG_ID": "663290e835aff7001cc62323",
+    "ACADEMIC_CALENDAR_LABEL": "2026"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rowo-academic-users-local",
+      // Local-only sentinel used by Miniflare and Sites packaging. Never deploy
+      // the default environment as the production Worker.
+      "database_id": "00000000-0000-4000-8000-000000000000",
+      "migrations_dir": "drizzle",
+      "migrations_table": "d1_migrations"
+    },
+    {
+      // Query-only application contract. Never run migrations or writes against
+      // this binding; it is replaced as a unit during a calendar-year rollover.
+      "binding": "ACADEMIC_DB",
+      "database_name": "uwaterloo-academic-calendar-2026",
+      "database_id": "578d593a-d00d-4723-b3de-0659e2388415",
+      "remote": true
+    }
+  ],
+  "env": {
+    "staging": {
+      "workers_dev": true,
+      "preview_urls": true,
+      "vars": {
+        "APP_ENV": "staging",
+        "ROWO_WEB_ORIGIN": "https://rowo.link",
+        "ROWO_API_ORIGIN": "https://api.rowo.link",
+        "ACADEMIC_CATALOG_ID": "663290e835aff7001cc62323",
+        "ACADEMIC_CALENDAR_LABEL": "2026"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rowo-academic-users-staging",
+          "database_id": "98b4a8fa-ae90-46a5-8d37-8e49e6bfe4c2",
+          "migrations_dir": "drizzle",
+          "migrations_table": "d1_migrations"
+        },
+        {
+          "binding": "ACADEMIC_DB",
+          "database_name": "uwaterloo-academic-calendar-2026",
+          "database_id": "578d593a-d00d-4723-b3de-0659e2388415"
+        }
+      ]
+    },
+    "production": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        {
+          "pattern": "academic.rowo.link",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_ENV": "production",
+        "ROWO_WEB_ORIGIN": "https://rowo.link",
+        "ROWO_API_ORIGIN": "https://api.rowo.link",
+        "ACADEMIC_CATALOG_ID": "663290e835aff7001cc62323",
+        "ACADEMIC_CALENDAR_LABEL": "2026"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rowo-academic-users-production",
+          "database_id": "b487e3d4-8efa-4e95-839b-5157ab0382d0",
+          "migrations_dir": "drizzle",
+          "migrations_table": "d1_migrations"
+        },
+        {
+          "binding": "ACADEMIC_DB",
+          "database_name": "uwaterloo-academic-calendar-2026",
+          "database_id": "578d593a-d00d-4723-b3de-0659e2388415"
+        }
+      ]
+    }
+  }
+}

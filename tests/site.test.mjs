@@ -30,7 +30,11 @@ test("keeps user data and the academic calendar in separate D1 bindings", async 
     source("db/schema.ts"),
   ]);
 
-  assert.deepEqual(JSON.parse(hosting), { d1: "DB", r2: null });
+  const hostingConfig = JSON.parse(hosting);
+  assert.deepEqual(Object.keys(hostingConfig).sort(), ["d1", "project_id", "r2"]);
+  assert.match(hostingConfig.project_id, /^appgprj_[a-z0-9]+$/);
+  assert.equal(hostingConfig.d1, "DB");
+  assert.equal(hostingConfig.r2, null);
   assert.match(wrangler, /"binding": "DB"/);
   assert.match(wrangler, /"binding": "ACADEMIC_DB"/);
   assert.match(wrangler, /578d593a-d00d-4723-b3de-0659e2388415/);

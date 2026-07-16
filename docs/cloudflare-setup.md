@@ -192,8 +192,9 @@ deployment job.
 ## 9. Verify the custom domain
 
 The initial production Worker was deployed with version
-`857b4b4d-1f4a-4a56-a728-2466b1fc2437`. Confirm from outside the local
-development network that:
+`857b4b4d-1f4a-4a56-a728-2466b1fc2437`. Its public DNS, HTTPS certificate,
+landing page, API authentication boundary, and SSO redirect were verified from
+outside the local intercepted DNS path. For future deployments, confirm that:
 
 - `academic.rowo.link` appears under Worker Settings > Domains & Routes;
 - Cloudflare issued the certificate and created the Worker DNS record;
@@ -236,4 +237,4 @@ Changing the calendar binding does not move or rewrite user data in `DB`.
 - [ ] Configure the staging and production Workers Builds settings above.
 - [ ] Protect `main` and require `CI / verify`.
 - [x] Deploy the committed `academic.rowo.link` Custom Domain route.
-- [ ] Confirm HTTPS and certificate issuance from an external client.
+- [x] Confirm HTTPS and certificate issuance from an external client.

@@ -15,7 +15,9 @@ const javascript = ts.transpileModule(source, {
 }).outputText;
 const {
   buildRequirementAnchorRegistry,
+  buildTrackedProgramAnchorRegistry,
   resolveRequirementReferenceAnchor,
+  resolveTrackedProgramReferenceAnchor,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
 );
@@ -127,5 +129,67 @@ test("keeps anchors unique across programs", () => {
   assert.notEqual(
     first.documentAnchors.get("course-document"),
     second.documentAnchors.get("course-document"),
+  );
+});
+
+test("resolves tracked program references by pid or program code", () => {
+  const registry = buildTrackedProgramAnchorRegistry([
+    {
+      programPid: "computer-science-bmath-honours",
+      programCode: "CS-BMATH-HON",
+      anchorId: "program-progress-saved-cs",
+    },
+  ]);
+
+  const reference = {
+    ordinal: 0,
+    targetType: "program",
+    targetPid: "computer-science-bmath-honours",
+    targetCode: "CS-BMATH-HON",
+    targetTitle: "Computer Science (Bachelor of Mathematics - Honours)",
+    credits: null,
+    resolutionStatus: "resolved",
+  };
+
+  assert.equal(
+    resolveTrackedProgramReferenceAnchor(registry, reference),
+    "program-progress-saved-cs",
+  );
+  assert.equal(
+    resolveTrackedProgramReferenceAnchor(registry, {
+      ...reference,
+      targetPid: "alternate-program-pid",
+      targetCode: "cs bmath hon",
+    }),
+    "program-progress-saved-cs",
+  );
+});
+
+test("does not anchor untracked or unresolved program references", () => {
+  const registry = buildTrackedProgramAnchorRegistry([
+    {
+      programPid: "computer-science-bmath-honours",
+      programCode: "CS-BMATH-HON",
+      anchorId: "program-progress-saved-cs",
+    },
+  ]);
+  const reference = {
+    ordinal: 0,
+    targetType: "program",
+    targetPid: "another-program",
+    targetCode: "ANOTHER-PROGRAM",
+    targetTitle: "Another program",
+    credits: null,
+    resolutionStatus: "resolved",
+  };
+
+  assert.equal(resolveTrackedProgramReferenceAnchor(registry, reference), null);
+  assert.equal(
+    resolveTrackedProgramReferenceAnchor(registry, {
+      ...reference,
+      targetPid: "computer-science-bmath-honours",
+      resolutionStatus: "unresolved",
+    }),
+    null,
   );
 });

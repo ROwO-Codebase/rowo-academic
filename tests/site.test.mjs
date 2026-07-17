@@ -128,13 +128,18 @@ test("renders actual requirement AST nodes as cascaded linked detail trees", asy
   assert.match(tree, /tab=plans&plan=/);
   assert.match(tree, /focusRequirementAnchor/);
   assert.match(tree, /scrollIntoView/);
+  assert.match(tree, /resolveTrackedProgramReferenceAnchor/);
   assert.match(anchors, /targetType !== "requirement_node"/);
   assert.match(anchors, /referenceTargets/);
+  assert.match(anchors, /buildTrackedProgramAnchorRegistry/);
   assert.match(browser, /<RequirementTree/);
   assert.match(browser, /buildRequirementAnchorRegistry/);
   assert.match(browser, /initialPid/);
   assert.match(dashboard, /requirement\.root/);
   assert.match(dashboard, /buildRequirementAnchorRegistry/);
+  assert.match(dashboard, /trackedProgramAnchors/);
+  assert.match(dashboard, /program-progress-/);
+  assert.match(dashboard, /"requirement-anchor-target"/);
   assert.match(styles, /\.requirement-reference-list/);
   assert.match(styles, /\.requirement-anchor-target:focus/);
 });

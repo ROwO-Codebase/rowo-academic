@@ -10,7 +10,9 @@ import { shouldHighlightRequirementSubconditions } from "@/lib/requirement-highl
 import { requirementNodePresentation } from "@/lib/requirement-node-kinds";
 import {
   resolveRequirementReferenceAnchor,
+  resolveTrackedProgramReferenceAnchor,
   type RequirementAnchorRegistry,
+  type TrackedProgramAnchorRegistry,
 } from "@/lib/requirement-anchors";
 import type { MouseEvent } from "react";
 
@@ -39,12 +41,14 @@ export function RequirementTree({
   root,
   evaluation,
   anchorRegistry,
+  trackedProgramAnchors,
   documentId,
   showCourseActivity = false,
 }: {
   root: RequirementTreeNodeData;
   evaluation?: RequirementTreeNodeData | null;
   anchorRegistry?: RequirementAnchorRegistry;
+  trackedProgramAnchors?: TrackedProgramAnchorRegistry;
   documentId?: string;
   showCourseActivity?: boolean;
 }) {
@@ -65,6 +69,7 @@ export function RequirementTree({
         node={root}
         evaluations={evaluations}
         anchorRegistry={anchorRegistry}
+        trackedProgramAnchors={trackedProgramAnchors}
         showCourseActivity={showCourseActivity}
         highlighted
         isRoot
@@ -77,6 +82,7 @@ function RequirementTreeNode({
   node,
   evaluations,
   anchorRegistry,
+  trackedProgramAnchors,
   showCourseActivity,
   highlighted,
   isRoot = false,
@@ -84,6 +90,7 @@ function RequirementTreeNode({
   node: RequirementTreeNodeData;
   evaluations: Map<string, RequirementTreeNodeData>;
   anchorRegistry?: RequirementAnchorRegistry;
+  trackedProgramAnchors?: TrackedProgramAnchorRegistry;
   showCourseActivity: boolean;
   highlighted: boolean;
   isRoot?: boolean;
@@ -171,6 +178,7 @@ function RequirementTreeNode({
                   <RequirementReferenceLink
                     reference={reference}
                     anchorRegistry={anchorRegistry}
+                    trackedProgramAnchors={trackedProgramAnchors}
                   />
                 </div>
                 {referenceEvaluation && (
@@ -191,6 +199,7 @@ function RequirementTreeNode({
                 node={child}
                 evaluations={evaluations}
                 anchorRegistry={anchorRegistry}
+                trackedProgramAnchors={trackedProgramAnchors}
                 showCourseActivity={showCourseActivity}
                 highlighted={highlightDescendants}
               />
@@ -239,11 +248,14 @@ function RequirementNodeText({
 function RequirementReferenceLink({
   reference,
   anchorRegistry,
+  trackedProgramAnchors,
 }: {
   reference: RequirementDisplayReference;
   anchorRegistry?: RequirementAnchorRegistry;
+  trackedProgramAnchors?: TrackedProgramAnchorRegistry;
 }) {
-  const anchorId = resolveRequirementReferenceAnchor(anchorRegistry, reference);
+  const anchorId = resolveRequirementReferenceAnchor(anchorRegistry, reference) ??
+    resolveTrackedProgramReferenceAnchor(trackedProgramAnchors, reference);
   const href = anchorId
     ? "#" + encodeURIComponent(anchorId)
     : requirementReferenceHref(reference);

@@ -18,7 +18,9 @@ import {
 import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
 import {
   buildRequirementAnchorRegistry,
+  buildTrackedProgramAnchorRegistry,
   type RequirementAnchorRegistry,
+  type TrackedProgramAnchorRegistry,
 } from "@/lib/requirement-anchors";
 import { Brand } from "../../components/Brand";
 import {
@@ -1721,9 +1723,11 @@ function OverviewPanel({
 function RequirementCard({
   requirement,
   anchorRegistry,
+  trackedProgramAnchors,
 }: {
   requirement: DashboardRequirement;
   anchorRegistry: RequirementAnchorRegistry;
+  trackedProgramAnchors: TrackedProgramAnchorRegistry;
 }) {
   const meta = requirementMeta[requirement.status];
 
@@ -1755,6 +1759,7 @@ function RequirementCard({
             root={requirement.root}
             documentId={requirement.id}
             anchorRegistry={anchorRegistry}
+            trackedProgramAnchors={trackedProgramAnchors}
             showCourseActivity
           />
         </div>
@@ -1809,6 +1814,13 @@ function ProgressPanel({
     dashboard.programs.length > 0 &&
     dashboard.programs.every((program) =>
       collapsedProgramIds.has(program.profile.id));
+  const trackedProgramAnchors = buildTrackedProgramAnchorRegistry(
+    dashboard.programs.map((program) => ({
+      programPid: program.profile.programPid,
+      programCode: program.profile.programCode,
+      anchorId: "program-progress-" + program.profile.id,
+    })),
+  );
 
   function toggleProgram(programId: string) {
     setCollapsedProgramIds((current) => {
@@ -1906,14 +1918,18 @@ function ProgressPanel({
             })),
           );
           const collapsed = collapsedProgramIds.has(program.profile.id);
+          const programAnchorId = "program-progress-" + program.profile.id;
           const bodyId = "program-progress-body-" + program.profile.id;
           return (
             <section
               className={classNames(
                 "program-progress-group",
+                "requirement-anchor-target",
                 collapsed && "is-collapsed",
               )}
+              id={programAnchorId}
               key={program.profile.id}
+              tabIndex={-1}
             >
               <header className="program-progress-heading">
                 <div>
@@ -1987,6 +2003,7 @@ function ProgressPanel({
                         key={program.profile.id + "-" + requirement.id}
                         requirement={requirement}
                         anchorRegistry={anchorRegistry}
+                        trackedProgramAnchors={trackedProgramAnchors}
                       />
                     ))}
                   </div>

@@ -20,6 +20,14 @@ export interface RequirementAnchorRegistry {
   referenceTargets: Map<string, string>;
 }
 
+export interface TrackedProgramAnchor {
+  programPid: string | null;
+  programCode: string | null;
+  anchorId: string;
+}
+
+export type TrackedProgramAnchorRegistry = Map<string, string>;
+
 export function buildRequirementAnchorRegistry(
   ownerPid: string,
   documents: RequirementAnchorDocument[],
@@ -83,6 +91,48 @@ export function resolveRequirementReferenceAnchor(
     null;
 }
 
+export function buildTrackedProgramAnchorRegistry(
+  programs: TrackedProgramAnchor[],
+): TrackedProgramAnchorRegistry {
+  const registry: TrackedProgramAnchorRegistry = new Map();
+
+  for (const program of programs) {
+    if (program.programPid) {
+      registry.set(trackedProgramTargetKey("pid", program.programPid), program.anchorId);
+    }
+    if (program.programCode) {
+      registry.set(
+        trackedProgramTargetKey("code", program.programCode),
+        program.anchorId,
+      );
+    }
+  }
+
+  return registry;
+}
+
+export function resolveTrackedProgramReferenceAnchor(
+  registry: TrackedProgramAnchorRegistry | undefined,
+  reference: RequirementDisplayReference,
+): string | null {
+  if (
+    !registry ||
+    reference.targetType !== "program" ||
+    reference.resolutionStatus !== "resolved"
+  ) {
+    return null;
+  }
+
+  const pidTarget = reference.targetPid
+    ? registry.get(trackedProgramTargetKey("pid", reference.targetPid))
+    : null;
+  const codeTarget = reference.targetCode
+    ? registry.get(trackedProgramTargetKey("code", reference.targetCode))
+    : null;
+
+  return pidTarget ?? codeTarget ?? null;
+}
+
 function collectNodeAnchors(
   ownerPid: string,
   document: RequirementAnchorDocument,
@@ -129,6 +179,13 @@ function isNamedRequirementTarget(node: RequirementAnchorNode): boolean {
 function referenceTargetKey(sourceField: string, title: string | null): string {
   return [normalizeAnchorLabel(sourceField), normalizeAnchorLabel(title ?? "")]
     .join("\u0000");
+}
+
+function trackedProgramTargetKey(
+  kind: "pid" | "code",
+  value: string,
+): string {
+  return `${kind}:${normalizeAnchorLabel(value)}`;
 }
 
 function normalizeAnchorLabel(value: string): string {

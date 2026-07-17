@@ -195,6 +195,24 @@ test("tracks multiple plans against one course record and prioritizes overlap", 
   assert.doesNotMatch(courseRecordsSchema, /programId|program_id/);
 });
 
+test("collapses individual programs or all programs in Progress", async () => {
+  const [dashboard, styles] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(dashboard, /collapsedProgramIds/);
+  assert.match(dashboard, /function toggleProgram/);
+  assert.match(dashboard, /function toggleAllPrograms/);
+  assert.match(dashboard, /Expand all programs/);
+  assert.match(dashboard, /Collapse all programs/);
+  assert.match(dashboard, /aria-expanded=\{!collapsed\}/);
+  assert.match(dashboard, /aria-controls=\{bodyId\}/);
+  assert.match(dashboard, /className="program-progress-body" hidden=\{collapsed\}/);
+  assert.match(styles, /\.program-progress-group\.is-collapsed/);
+  assert.match(styles, /\.progress-heading-controls/);
+});
+
 test("groups the signed-in course record by academic term", async () => {
   const [dashboard, styles] = await Promise.all([
     source("app/app/AcademicDashboard.tsx"),

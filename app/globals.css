@@ -2270,6 +2270,13 @@ button {
   gap: 18px;
 }
 
+.progress-heading-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .program-progress-group {
   padding: 20px;
   border: 1px solid var(--slate-200);
@@ -2283,6 +2290,10 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
+}
+
+.program-progress-group.is-collapsed .program-progress-heading {
+  margin-bottom: 0;
 }
 
 .program-progress-heading h2 {
@@ -2307,6 +2318,23 @@ button {
   display: grid;
   justify-items: end;
   gap: 7px;
+}
+
+.program-progress-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.program-collapse-toggle span {
+  width: 12px;
+  color: var(--slate-400);
+  text-align: center;
+}
+
+.program-progress-body[hidden] {
+  display: none;
 }
 
 .danger-text {
@@ -4035,6 +4063,21 @@ button {
   .program-progress-actions {
     width: 100%;
     justify-items: start;
+  }
+
+  .progress-heading-controls,
+  .program-progress-controls {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .progress-heading-controls {
+    gap: 8px;
+  }
+
+  .program-progress-controls {
+    gap: 2px;
   }
 
   .program-progress-group {

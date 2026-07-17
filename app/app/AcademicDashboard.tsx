@@ -1789,6 +1789,30 @@ function ProgressPanel({
 }) {
   const [filter, setFilter] = useState<"all" | "attention">("all");
   const [busyProgramId, setBusyProgramId] = useState<string | null>(null);
+  const [collapsedProgramIds, setCollapsedProgramIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const allProgramsCollapsed =
+    dashboard.programs.length > 0 &&
+    dashboard.programs.every((program) =>
+      collapsedProgramIds.has(program.profile.id));
+
+  function toggleProgram(programId: string) {
+    setCollapsedProgramIds((current) => {
+      const next = new Set(current);
+      if (next.has(programId)) next.delete(programId);
+      else next.add(programId);
+      return next;
+    });
+  }
+
+  function toggleAllPrograms() {
+    setCollapsedProgramIds(
+      allProgramsCollapsed
+        ? new Set()
+        : new Set(dashboard.programs.map((program) => program.profile.id)),
+    );
+  }
 
   async function removePlan(program: DashboardProgramProgress) {
     if (!window.confirm("Stop tracking " + program.profile.programTitle + "?")) {
@@ -1820,23 +1844,32 @@ function ProgressPanel({
             {dashboard.programs.length} tracked {dashboard.programs.length === 1 ? "plan" : "plans"}.
           </p>
         </div>
-        <div className="segmented-control" aria-label="Requirement filter">
+        <div className="progress-heading-controls">
           <button
+            className="button button-secondary button-compact"
             type="button"
-            className={filter === "all" ? "active" : ""}
-            aria-pressed={filter === "all"}
-            onClick={() => setFilter("all")}
+            onClick={toggleAllPrograms}
           >
-            All
+            {allProgramsCollapsed ? "Expand all programs" : "Collapse all programs"}
           </button>
-          <button
-            type="button"
-            className={filter === "attention" ? "active" : ""}
-            aria-pressed={filter === "attention"}
-            onClick={() => setFilter("attention")}
-          >
-            Needs attention
-          </button>
+          <div className="segmented-control" aria-label="Requirement filter">
+            <button
+              type="button"
+              className={filter === "all" ? "active" : ""}
+              aria-pressed={filter === "all"}
+              onClick={() => setFilter("all")}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className={filter === "attention" ? "active" : ""}
+              aria-pressed={filter === "attention"}
+              onClick={() => setFilter("attention")}
+            >
+              Needs attention
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1851,8 +1884,16 @@ function ProgressPanel({
           const requirements = program.requirements.filter((requirement) =>
             filter === "all" ? true : requirement.status !== "met",
           );
+          const collapsed = collapsedProgramIds.has(program.profile.id);
+          const bodyId = "program-progress-body-" + program.profile.id;
           return (
-            <section className="program-progress-group" key={program.profile.id}>
+            <section
+              className={classNames(
+                "program-progress-group",
+                collapsed && "is-collapsed",
+              )}
+              key={program.profile.id}
+            >
               <header className="program-progress-heading">
                 <div>
                   <span className="card-kicker">Tracked plan {index + 1}</span>
@@ -1880,41 +1921,55 @@ function ProgressPanel({
                       </span>
                     </div>
                   )}
-                  <button
-                    className="text-button danger-text"
-                    type="button"
-                    disabled={busyProgramId === program.profile.id}
-                    onClick={() => void removePlan(program)}
-                  >
-                    {busyProgramId === program.profile.id ? "Removing…" : "Remove plan"}
-                  </button>
+                  <div className="program-progress-controls">
+                    <button
+                      className="text-button program-collapse-toggle"
+                      type="button"
+                      aria-expanded={!collapsed}
+                      aria-controls={bodyId}
+                      onClick={() => toggleProgram(program.profile.id)}
+                    >
+                      <span aria-hidden="true">{collapsed ? "▾" : "▴"}</span>
+                      {collapsed ? "Expand program" : "Collapse program"}
+                    </button>
+                    <button
+                      className="text-button danger-text"
+                      type="button"
+                      disabled={busyProgramId === program.profile.id}
+                      onClick={() => void removePlan(program)}
+                    >
+                      {busyProgramId === program.profile.id ? "Removing…" : "Remove plan"}
+                    </button>
+                  </div>
                 </div>
               </header>
 
-              {program.calendarMismatch ? (
-                <div className="inline-error" role="alert">
-                  <strong>Calendar reconfirmation required.</strong>
-                  <span>This plan belongs to {program.profile.catalogLabel}.</span>
-                </div>
-              ) : requirements.length === 0 ? (
-                <div className="program-requirements-empty">
-                  <span aria-hidden="true">✓</span>
-                  <p>
-                    {filter === "attention"
-                      ? "No requirements in this plan need attention."
-                      : "No structured requirements are available for this plan."}
-                  </p>
-                </div>
-              ) : (
-                <div className="requirement-list">
-                  {requirements.map((requirement) => (
-                    <RequirementCard
-                      key={program.profile.id + "-" + requirement.id}
-                      requirement={requirement}
-                    />
-                  ))}
-                </div>
-              )}
+              <div id={bodyId} className="program-progress-body" hidden={collapsed}>
+                {program.calendarMismatch ? (
+                  <div className="inline-error" role="alert">
+                    <strong>Calendar reconfirmation required.</strong>
+                    <span>This plan belongs to {program.profile.catalogLabel}.</span>
+                  </div>
+                ) : requirements.length === 0 ? (
+                  <div className="program-requirements-empty">
+                    <span aria-hidden="true">✓</span>
+                    <p>
+                      {filter === "attention"
+                        ? "No requirements in this plan need attention."
+                        : "No structured requirements are available for this plan."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="requirement-list">
+                    {requirements.map((requirement) => (
+                      <RequirementCard
+                        key={program.profile.id + "-" + requirement.id}
+                        requirement={requirement}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </section>
           );
         })}

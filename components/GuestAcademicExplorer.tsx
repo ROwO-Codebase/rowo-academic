@@ -14,6 +14,7 @@ import type {
 } from "@/lib/types";
 import type { PublicRequirementSummary } from "@/lib/public-academic";
 import { isNonAcademicCourseCode } from "@/lib/course-records";
+import { buildRequirementAnchorRegistry } from "@/lib/requirement-anchors";
 import {
   uwflowCourseUrl,
   waterlooCourseOutlineUrl,
@@ -205,10 +206,12 @@ function GuestNotice() {
 function RequirementInformation({
   requirements,
   emptyMessage,
+  ownerPid,
   evaluations = [],
 }: {
   requirements: PublicRequirementSummary[];
   emptyMessage: string;
+  ownerPid: string;
   evaluations?: Array<{
     documentId: string;
     root: RequirementTreeNodeData | null;
@@ -217,6 +220,15 @@ function RequirementInformation({
   if (requirements.length === 0) {
     return <div className="inline-empty">{emptyMessage}</div>;
   }
+
+  const anchorRegistry = buildRequirementAnchorRegistry(
+    ownerPid,
+    requirements.map((requirement) => ({
+      documentId: requirement.id,
+      sourceField: requirement.sourceField,
+      root: requirement.root,
+    })),
+  );
 
   return (
     <div className="guest-requirement-list">
@@ -239,6 +251,8 @@ function RequirementInformation({
             {requirement.root ? (
               <RequirementTree
                 root={requirement.root}
+                documentId={requirement.id}
+                anchorRegistry={anchorRegistry}
                 evaluation={
                   evaluations.find((item) => item.documentId === requirement.id)?.root
                 }
@@ -541,6 +555,7 @@ function PlanExplorer({
               </div>
               <RequirementInformation
                 requirements={detail.requirements}
+                ownerPid={detail.program.pid}
                 emptyMessage="No structured requirement information is available for this plan."
               />
             </>
@@ -989,6 +1004,7 @@ function CourseExplorer({
               </div>
               <RequirementInformation
                 requirements={detail.requirements}
+                ownerPid={detail.course.pid}
                 emptyMessage="The calendar does not list prerequisite, corequisite, or antirequisite information for this course."
                 evaluations={detail.eligibility?.documents}
               />

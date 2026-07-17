@@ -1,3 +1,5 @@
+"use client";
+
 import type {
   RequirementDisplayReference,
   RequirementNodePresentation,
@@ -6,6 +8,11 @@ import type {
 } from "@/lib/types";
 import { shouldHighlightRequirementSubconditions } from "@/lib/requirement-highlights";
 import { requirementNodePresentation } from "@/lib/requirement-node-kinds";
+import {
+  resolveRequirementReferenceAnchor,
+  type RequirementAnchorRegistry,
+} from "@/lib/requirement-anchors";
+import type { MouseEvent } from "react";
 
 export interface RequirementTreeNodeData {
   nodeId: string | null;
@@ -31,17 +38,31 @@ const stateMeta: Record<TriState, { label: string; symbol: string }> = {
 export function RequirementTree({
   root,
   evaluation,
+  anchorRegistry,
+  documentId,
 }: {
   root: RequirementTreeNodeData;
   evaluation?: RequirementTreeNodeData | null;
+  anchorRegistry?: RequirementAnchorRegistry;
+  documentId?: string;
 }) {
   const evaluations = new Map<string, RequirementTreeNodeData>();
   if (evaluation) collectEvaluations(evaluation, evaluations);
+  const documentAnchorId = documentId
+    ? anchorRegistry?.documentAnchors.get(documentId)
+    : undefined;
   return (
-    <div className="requirement-tree">
+    <div
+      className={documentAnchorId
+        ? "requirement-tree requirement-anchor-target"
+        : "requirement-tree"}
+      id={documentAnchorId}
+      tabIndex={documentAnchorId ? -1 : undefined}
+    >
       <RequirementTreeNode
         node={root}
         evaluations={evaluations}
+        anchorRegistry={anchorRegistry}
         highlighted
         isRoot
       />
@@ -52,11 +73,13 @@ export function RequirementTree({
 function RequirementTreeNode({
   node,
   evaluations,
+  anchorRegistry,
   highlighted,
   isRoot = false,
 }: {
   node: RequirementTreeNodeData;
   evaluations: Map<string, RequirementTreeNodeData>;
+  anchorRegistry?: RequirementAnchorRegistry;
   highlighted: boolean;
   isRoot?: boolean;
 }) {
@@ -76,6 +99,9 @@ function RequirementTreeNode({
     highlighted,
   );
   const text = displayNodeText(node, presentation);
+  const nodeAnchorId = node.nodeId
+    ? anchorRegistry?.nodeAnchors.get(node.nodeId)
+    : undefined;
   const content = (
     <>
       {!isRoot && text && (
@@ -127,7 +153,10 @@ function RequirementTreeNode({
                       {stateMeta[referenceEvaluation.state].symbol}
                     </span>
                   )}
-                  <RequirementReferenceLink reference={reference} />
+                  <RequirementReferenceLink
+                    reference={reference}
+                    anchorRegistry={anchorRegistry}
+                  />
                 </div>
                 {referenceEvaluation && (
                   <small className="requirement-leaf-reason">
@@ -146,6 +175,7 @@ function RequirementTreeNode({
               <RequirementTreeNode
                 node={child}
                 evaluations={evaluations}
+                anchorRegistry={anchorRegistry}
                 highlighted={highlightDescendants}
               />
             </li>
@@ -155,7 +185,19 @@ function RequirementTreeNode({
     </>
   );
 
-  return isRoot ? content : <div className="requirement-tree-node">{content}</div>;
+  return isRoot
+    ? content
+    : (
+      <div
+        className={nodeAnchorId
+          ? "requirement-tree-node requirement-anchor-target"
+          : "requirement-tree-node"}
+        id={nodeAnchorId}
+        tabIndex={nodeAnchorId ? -1 : undefined}
+      >
+        {content}
+      </div>
+    );
 }
 
 function RequirementNodeText({
@@ -180,10 +222,15 @@ function RequirementNodeText({
 
 function RequirementReferenceLink({
   reference,
+  anchorRegistry,
 }: {
   reference: RequirementDisplayReference;
+  anchorRegistry?: RequirementAnchorRegistry;
 }) {
-  const href = requirementReferenceHref(reference);
+  const anchorId = resolveRequirementReferenceAnchor(anchorRegistry, reference);
+  const href = anchorId
+    ? "#" + encodeURIComponent(anchorId)
+    : requirementReferenceHref(reference);
   const content = reference.targetType === "course" ? (
     <>
       <strong>{reference.targetCode ?? reference.targetTitle ?? "Course"}</strong>
@@ -204,10 +251,59 @@ function RequirementReferenceLink({
   );
 
   return href ? (
-    <a className="requirement-reference-link" href={href}>{content}</a>
+    <a
+      className="requirement-reference-link"
+      href={href}
+      onClick={anchorId
+        ? (event) => focusRequirementAnchor(event, anchorId)
+        : undefined}
+    >
+      {content}
+    </a>
   ) : (
     <span className="requirement-reference-link unresolved">{content}</span>
   );
+}
+
+function focusRequirementAnchor(
+  event: MouseEvent<HTMLAnchorElement>,
+  anchorId: string,
+) {
+  if (
+    event.button !== 0 ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey
+  ) {
+    return;
+  }
+
+  const target = document.getElementById(anchorId);
+  if (!target) return;
+  event.preventDefault();
+
+  let ancestor = target.parentElement;
+  while (ancestor) {
+    if (ancestor.tagName === "DETAILS") {
+      (ancestor as HTMLDetailsElement).open = true;
+    }
+    ancestor = ancestor.parentElement;
+  }
+
+  const hash = "#" + encodeURIComponent(anchorId);
+  if (window.location.hash === hash) {
+    window.history.replaceState(null, "", hash);
+  } else {
+    window.history.pushState(null, "", hash);
+  }
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+    block: "start",
+  });
 }
 
 function requirementReferenceHref(

@@ -112,9 +112,10 @@ test("gives signed-in users an account-aware program and course browser", async 
 });
 
 test("renders actual requirement AST nodes as cascaded linked detail trees", async () => {
-  const [summary, tree, browser, dashboard, styles] = await Promise.all([
+  const [summary, tree, anchors, browser, dashboard, styles] = await Promise.all([
     source("lib/public-academic.ts"),
     source("components/RequirementTree.tsx"),
+    source("lib/requirement-anchors.ts"),
     source("components/GuestAcademicExplorer.tsx"),
     source("app/app/AcademicDashboard.tsx"),
     source("app/globals.css"),
@@ -125,10 +126,17 @@ test("renders actual requirement AST nodes as cascaded linked detail trees", asy
   assert.match(tree, /requirement-child-list/);
   assert.match(tree, /tab=courses&course=/);
   assert.match(tree, /tab=plans&plan=/);
+  assert.match(tree, /focusRequirementAnchor/);
+  assert.match(tree, /scrollIntoView/);
+  assert.match(anchors, /targetType !== "requirement_node"/);
+  assert.match(anchors, /referenceTargets/);
   assert.match(browser, /<RequirementTree/);
+  assert.match(browser, /buildRequirementAnchorRegistry/);
   assert.match(browser, /initialPid/);
   assert.match(dashboard, /requirement\.root/);
+  assert.match(dashboard, /buildRequirementAnchorRegistry/);
   assert.match(styles, /\.requirement-reference-list/);
+  assert.match(styles, /\.requirement-anchor-target:focus/);
 });
 
 test("highlights evaluated leaf conditions only along unmet AST branches", async () => {

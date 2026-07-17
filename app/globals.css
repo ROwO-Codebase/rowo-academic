@@ -1505,6 +1505,16 @@ button {
   line-height: 1.55;
 }
 
+.requirement-anchor-target {
+  scroll-margin-top: 24px;
+}
+
+.requirement-anchor-target:focus {
+  border-radius: 8px;
+  outline: 2px solid var(--indigo-500);
+  outline-offset: 4px;
+}
+
 .requirement-child-list,
 .requirement-reference-list {
   margin: 8px 0 0;

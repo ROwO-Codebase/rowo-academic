@@ -16,6 +16,10 @@ import {
   isNonAcademicCourseCode,
 } from "@/lib/course-records";
 import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
+import {
+  buildRequirementAnchorRegistry,
+  type RequirementAnchorRegistry,
+} from "@/lib/requirement-anchors";
 import { Brand } from "../../components/Brand";
 import {
   GuestAcademicExplorer,
@@ -76,6 +80,7 @@ interface DashboardCourse {
 
 interface DashboardRequirement {
   id: string;
+  sourceField: string;
   title: string;
   description?: string | null;
   status: RequirementStatus;
@@ -481,6 +486,7 @@ function normalizeRequirements(
     const unknownReasons = document.root?.unknownReasons || [];
     return {
       id: document.documentId,
+      sourceField: document.sourceField,
       title: readableRequirementName(
         document.requirementKind || document.sourceField,
       ),
@@ -1714,8 +1720,10 @@ function OverviewPanel({
 
 function RequirementCard({
   requirement,
+  anchorRegistry,
 }: {
   requirement: DashboardRequirement;
+  anchorRegistry: RequirementAnchorRegistry;
 }) {
   const meta = requirementMeta[requirement.status];
 
@@ -1743,7 +1751,11 @@ function RequirementCard({
 
       {requirement.root && (
         <div className="requirement-ast">
-          <RequirementTree root={requirement.root} />
+          <RequirementTree
+            root={requirement.root}
+            documentId={requirement.id}
+            anchorRegistry={anchorRegistry}
+          />
         </div>
       )}
 
@@ -1884,6 +1896,14 @@ function ProgressPanel({
           const requirements = program.requirements.filter((requirement) =>
             filter === "all" ? true : requirement.status !== "met",
           );
+          const anchorRegistry = buildRequirementAnchorRegistry(
+            program.profile.programPid,
+            requirements.map((requirement) => ({
+              documentId: requirement.id,
+              sourceField: requirement.sourceField,
+              root: requirement.root ?? null,
+            })),
+          );
           const collapsed = collapsedProgramIds.has(program.profile.id);
           const bodyId = "program-progress-body-" + program.profile.id;
           return (
@@ -1965,6 +1985,7 @@ function ProgressPanel({
                       <RequirementCard
                         key={program.profile.id + "-" + requirement.id}
                         requirement={requirement}
+                        anchorRegistry={anchorRegistry}
                       />
                     ))}
                   </div>

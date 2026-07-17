@@ -128,17 +128,21 @@ test("renders actual requirement AST nodes as cascaded linked detail trees", asy
   assert.match(styles, /\.requirement-reference-list/);
 });
 
-test("highlights evaluated leaf conditions under unmet AST parents", async () => {
-  const [tree, evaluator, styles, courseDetail] = await Promise.all([
+test("highlights evaluated leaf conditions only along unmet AST branches", async () => {
+  const [tree, highlights, evaluator, styles, courseDetail] = await Promise.all([
     source("components/RequirementTree.tsx"),
+    source("lib/requirement-highlights.ts"),
     source("lib/requirements.ts"),
     source("app/globals.css"),
     source("app/api/catalog/courses/[pid]/route.ts"),
   ]);
 
   assert.match(tree, /findReferenceEvaluation/);
-  assert.match(tree, /state && state !== "MET"/);
+  assert.match(tree, /shouldHighlightRequirementSubconditions/);
+  assert.match(tree, /highlighted=\{highlightDescendants\}/);
+  assert.match(tree, /const referenceEvaluation = highlightDescendants/);
   assert.match(tree, /requirement-leaf-reason/);
+  assert.match(highlights, /state !== "MET"/);
   assert.match(evaluator, /referenceEvaluations/);
   assert.match(evaluator, /gradeMinimum != null[\s\S]*?course\.status === "completed"/);
   assert.match(evaluator, /hasVerifiedPartialGradeSemantics/);

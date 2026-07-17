@@ -3,6 +3,7 @@ import type {
   RequirementReferenceEvaluation,
   TriState,
 } from "@/lib/types";
+import { shouldHighlightRequirementSubconditions } from "@/lib/requirement-highlights";
 
 export interface RequirementTreeNodeData {
   nodeId: string | null;
@@ -38,6 +39,7 @@ export function RequirementTree({
       <RequirementTreeNode
         node={root}
         evaluations={evaluations}
+        highlighted
         isRoot
       />
     </div>
@@ -47,20 +49,27 @@ export function RequirementTree({
 function RequirementTreeNode({
   node,
   evaluations,
+  highlighted,
   isRoot = false,
 }: {
   node: RequirementTreeNodeData;
   evaluations: Map<string, RequirementTreeNodeData>;
+  highlighted: boolean;
   isRoot?: boolean;
 }) {
   const evaluated = node.nodeId ? evaluations.get(node.nodeId) : undefined;
   const state = evaluated?.state ?? node.state;
+  const showState = !isRoot && highlighted && state !== undefined;
+  const highlightDescendants = shouldHighlightRequirementSubconditions(
+    state,
+    highlighted,
+  );
   const text = displayNodeText(node);
   const content = (
     <>
       {!isRoot && (
         <div className="requirement-node-heading">
-          {state && (
+          {showState && (
             <span
               className={"requirement-node-state state-" + state.toLowerCase()}
               title={evaluated?.reason ?? node.reason ?? stateMeta[state].label}
@@ -75,7 +84,7 @@ function RequirementTreeNode({
       {node.references.length > 0 && (
         <ul className="requirement-reference-list">
           {node.references.map((reference, index) => {
-            const referenceEvaluation = state && state !== "MET"
+            const referenceEvaluation = highlightDescendants
               ? findReferenceEvaluation(evaluated ?? node, reference, index)
               : undefined;
             return (
@@ -114,7 +123,11 @@ function RequirementTreeNode({
         <ul className={isRoot ? "requirement-child-list root-children" : "requirement-child-list"}>
           {node.children.map((child, index) => (
             <li key={child.nodeId ?? child.nodeType + "-" + index}>
-              <RequirementTreeNode node={child} evaluations={evaluations} />
+              <RequirementTreeNode
+                node={child}
+                evaluations={evaluations}
+                highlighted={highlightDescendants}
+              />
             </li>
           ))}
         </ul>

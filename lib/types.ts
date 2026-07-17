@@ -132,7 +132,12 @@ export interface RequirementReference {
   credits?: string | number | null;
   source_mode?: "link" | "text" | "derived" | string;
   source?: "link" | "text" | "derived" | string;
-  resolution_status?: "resolved" | "unresolved" | "external" | string;
+  resolution_status?:
+    | "resolved"
+    | "code_only"
+    | "unresolved"
+    | "external"
+    | string;
   [key: string]: unknown;
 }
 
@@ -218,6 +223,10 @@ export interface RequirementDocument {
 }
 
 export type TriState = "MET" | "NOT_MET" | "UNKNOWN";
+export type RequirementNodePresentation =
+  | "condition"
+  | "informational"
+  | "structural";
 
 export interface RequirementReferenceEvaluation {
   ordinal: number | null;
@@ -270,6 +279,7 @@ export interface RequirementNodeEvaluation {
   minCount: number | null;
   maxCount: number | null;
   references: RequirementDisplayReference[];
+  presentation: RequirementNodePresentation;
   state: TriState;
   provisionalState?: TriState;
   reason: string;

@@ -7,12 +7,24 @@ const source = await readFile(
   new URL("../lib/requirements.ts", import.meta.url),
   "utf8",
 );
-const javascript = ts.transpileModule(source, {
+const nodeKindsSource = await readFile(
+  new URL("../lib/requirement-node-kinds.ts", import.meta.url),
+  "utf8",
+);
+const nodeKindsJavascript = ts.transpileModule(nodeKindsSource, {
   compilerOptions: {
     module: ts.ModuleKind.ESNext,
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
+const nodeKindsUrl =
+  `data:text/javascript;base64,${Buffer.from(nodeKindsJavascript).toString("base64")}`;
+const javascript = ts.transpileModule(source, {
+  compilerOptions: {
+    module: ts.ModuleKind.ESNext,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText.replace("./requirement-node-kinds", nodeKindsUrl);
 const requirements = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
 );
@@ -479,4 +491,126 @@ test("evaluates and preserves the real cascaded course-and-program AST shape", (
     ]),
   );
   assert.equal(withoutProgram.state, "NOT_MET");
+});
+
+test("treats structural and pure informational v2 nodes as neutral", () => {
+  const root = node("root", {
+    logic: "all",
+    children: [
+      node("table_row", {
+        text: "Key | Description",
+        evaluability: "manual",
+        parse_status: "partial",
+      }),
+      node("course_offering_note", {
+        text: "Note: EARTH390 is offered after winter exams.",
+        evaluability: "partial",
+        parse_status: "partial",
+      }),
+      node("course_completed", { refs: [reference("CS135")] }),
+    ],
+  });
+  const result = evaluateRequirementDocuments(
+    [document(root, {
+      parseStatus: "partial",
+      evaluability: "mixed",
+      sourceMatchesCurrentPayload: true,
+    })],
+    context([{ coursePid: "cs135-pid", courseCode: "CS135", status: "completed" }]),
+  );
+  assert.equal(result.state, "MET");
+  assert.equal(result.documents[0].root.children[0].presentation, "structural");
+  assert.equal(result.documents[0].root.children[1].presentation, "informational");
+});
+
+test("matches parser-v2 code-only course references by transcript code", () => {
+  const root = node("course_completed", {
+    refs: [reference("MSCI240", {
+      target_pid: null,
+      resolution_status: "code_only",
+    })],
+  });
+  const result = evaluateRequirementDocuments(
+    [document(root)],
+    context([{ courseCode: "MSCI 240", status: "completed" }]),
+  );
+  assert.equal(result.state, "MET");
+});
+
+test("evaluates parser-v2 subject, range, and nested level course selectors", () => {
+  const unitPool = node("course_pool", {
+    logic: "at_least",
+    min_units: 1,
+    params: {
+      course_selectors_authoritative: true,
+      course_selector_logic: "any",
+      course_selectors: [{ type: "subject_wildcard", subjects: ["HIST"] }],
+    },
+  });
+  const nestedPool = node("course_pool", {
+    logic: "at_least",
+    min_count: 5,
+    params: {
+      course_selectors_authoritative: true,
+      course_selector_logic: "any",
+      course_selectors: [{ type: "subject_wildcard", subjects: ["AMATH"] }],
+      course_selector_constraints: [
+        {
+          min_count: 3,
+          course_selector_logic: "any",
+          course_selectors: [
+            { type: "course_level", comparison: "one_of", levels: [300, 400] },
+          ],
+        },
+      ],
+    },
+  });
+  const courses = [
+    { courseCode: "HIST201", status: "completed", credits: 0.5 },
+    { courseCode: "HIST 375", status: "completed", credits: 0.5 },
+    { courseCode: "AMATH231", status: "completed", credits: 0.5 },
+    { courseCode: "AMATH250", status: "completed", credits: 0.5 },
+    { courseCode: "AMATH331", status: "completed", credits: 0.5 },
+    { courseCode: "AMATH351", status: "completed", credits: 0.5 },
+    { courseCode: "AMATH475", status: "completed", credits: 0.5 },
+  ];
+  assert.equal(
+    evaluateRequirementDocuments([document(unitPool)], context(courses)).state,
+    "MET",
+  );
+  assert.equal(
+    evaluateRequirementDocuments([document(nestedPool)], context(courses)).state,
+    "MET",
+  );
+
+  const rangePool = node("course_pool", {
+    logic: "at_least",
+    min_count: 1,
+    params: {
+      course_selectors_authoritative: true,
+      course_selectors: [
+        { type: "course_range", subject: "HIST", minimum: 300, maximum: 499 },
+      ],
+    },
+  });
+  assert.equal(
+    evaluateRequirementDocuments([document(rangePool)], context(courses)).state,
+    "MET",
+  );
+});
+
+test("keeps ambiguous parser-v2 selectors unknown", () => {
+  const root = node("course_pool", {
+    logic: "at_least",
+    min_count: 1,
+    params: {
+      course_selectors_authoritative: false,
+      course_selectors: [{ type: "subject_wildcard", subjects: ["CS"] }],
+    },
+  });
+  const result = evaluateRequirementDocuments(
+    [document(root)],
+    context([{ courseCode: "CS135", status: "completed", credits: 0.5 }]),
+  );
+  assert.equal(result.state, "UNKNOWN");
 });

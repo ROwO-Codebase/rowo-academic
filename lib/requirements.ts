@@ -15,6 +15,7 @@ import type {
   StudentCourseRecord,
   TriState,
 } from "./types";
+import { requirementNodePresentation } from "./requirement-node-kinds";
 
 const MET: TriState = "MET";
 const NOT_MET: TriState = "NOT_MET";
@@ -31,31 +32,67 @@ export function evaluateRequirementNode(
 ): RequirementNodeEvaluation {
   const nodeType = String(node.node_type || "unknown");
   const children = Array.isArray(node.children) ? node.children : [];
+  const presentation = requirementNodePresentation(node);
+  const unresolvedAggregation = node.params?.aggregation_unresolved === true;
   let evaluation: RequirementNodeEvaluation;
 
-  if (["root", "group", "section", "heading"].includes(nodeType)) {
+  if (unresolvedAggregation) {
     const childEvaluations = children.map((child) =>
       evaluateRequirementNode(child, context, options));
-    const state = aggregateStates(
-      childEvaluations.map((child) => child.state),
-      node.logic ?? node.operator ?? "all",
-      numberOrNull(node.min_count),
-      numberOrNull(node.max_count),
+    evaluation = result(
+      node,
+      UNKNOWN,
+      "This aggregate rule retains its structure but its scope is not fully resolved.",
+      childEvaluations,
+      ["The aggregate requirement scope needs manual review."],
     );
+  } else if (nodeType === "group" || presentation === "structural") {
+    const childEvaluations = children.map((child) =>
+      evaluateRequirementNode(child, context, options));
+    const state = childEvaluations.length === 0
+      ? MET
+      : aggregateStates(
+          childEvaluations.map((child) => child.state),
+          node.logic ?? node.operator ?? "all",
+          numberOrNull(node.min_count),
+          numberOrNull(node.max_count),
+        );
     evaluation = result(node, state, aggregateReason(state), childEvaluations);
+  } else if (presentation === "informational") {
+    const childEvaluations = children.map((child) =>
+      evaluateRequirementNode(child, context, options));
+    const state = childEvaluations.length === 0
+      ? MET
+      : aggregateStates(
+          childEvaluations.map((child) => child.state),
+          node.logic ?? node.operator ?? "all",
+          numberOrNull(node.min_count),
+          numberOrNull(node.max_count),
+        );
+    evaluation = result(
+      node,
+      state,
+      childEvaluations.length === 0
+        ? "This node provides information and does not add a completion condition."
+        : aggregateReason(state),
+      childEvaluations,
+    );
   } else if (
     nodeType === "course_completed" ||
-    nodeType === "course_completed_or_enrolled" ||
-    nodeType === "course_pool"
+    nodeType === "course_completed_or_enrolled"
   ) {
     evaluation = evaluatePositiveCourseNode(node, context, options);
+  } else if (nodeType === "course_pool") {
+    evaluation = handlesCoursePoolAggregate(node)
+      ? evaluateCoursePoolAggregate(node, context, options)
+      : evaluatePositiveCourseNode(node, context, options);
   } else if (nodeType === "course_forbidden") {
     evaluation = evaluateForbiddenCourseNode(node, context, options);
   } else if (nodeType === "program_enrolled") {
     evaluation = evaluateProgramNode(node, context, false);
   } else if (nodeType === "program_forbidden") {
     evaluation = evaluateProgramNode(node, context, true);
-  } else if (nodeType === "numeric_constraint") {
+  } else if (nodeType === "numeric_constraint" || nodeType === "unit_constraint") {
     const numeric = evaluateNumericConstraints(node, context);
     evaluation = result(node, numeric.state, numeric.reason);
   } else {
@@ -73,7 +110,13 @@ export function evaluateRequirementNode(
   }
 
   const numericGate = evaluateNumericConstraints(node, context);
-  if (numericGate.present && nodeType !== "numeric_constraint") {
+  if (
+    numericGate.present &&
+    !["numeric_constraint", "unit_constraint"].includes(nodeType) &&
+    presentation === "condition" &&
+    !unresolvedAggregation &&
+    !handlesCoursePoolAggregate(node)
+  ) {
     const combined = aggregateStates(
       [evaluation.state, numericGate.state],
       "all",
@@ -135,7 +178,9 @@ export function evaluateRequirementDocument(
   const declaredIncomplete = document.parseStatus !== "parsed" ||
     document.evaluability === "mixed" || document.evaluability === "unknown";
   const incomplete = document.sourceMatchesCurrentPayload === false ||
-    (declaredIncomplete && !hasVerifiedPartialGradeSemantics(document));
+    (declaredIncomplete &&
+      !hasVerifiedPartialGradeSemantics(document) &&
+      !hasOnlyNeutralPartialNodes(document));
   const state = incomplete && computedState === MET ? UNKNOWN : computedState;
   return {
     documentId: document.documentId,
@@ -366,6 +411,325 @@ function evaluatePositiveCourseNode(
     matchedCourseCodes: unique(matched),
     unmetCourseCodes: unique(unmet),
   };
+}
+
+type CourseSelector = Record<string, unknown>;
+
+function hasCourseSelectorSemantics(node: RequirementNode): boolean {
+  return selectorList(node.params?.course_selectors).length > 0 ||
+    selectorConstraintList(node.params?.course_selector_constraints).length > 0;
+}
+
+function handlesCoursePoolAggregate(node: RequirementNode): boolean {
+  if (node.node_type !== "course_pool") return false;
+  const logic = String(node.logic ?? node.operator ?? "").toLowerCase();
+  return hasCourseSelectorSemantics(node) ||
+    node.min_units != null ||
+    node.max_units != null ||
+    ["at_most", "range"].includes(logic);
+}
+
+function evaluateCoursePoolAggregate(
+  node: RequirementNode,
+  context: RequirementEvaluationContext,
+  options: RequirementEvaluationOptions,
+): RequirementNodeEvaluation {
+  const references = courseReferences(node);
+  const selectors = selectorList(node.params?.course_selectors);
+  const selectorConstraints = selectorConstraintList(
+    node.params?.course_selector_constraints,
+  );
+  const childEvaluations = (node.children ?? []).map((child) =>
+    evaluateRequirementNode(child, context, options));
+  const unknownReasons: string[] = [];
+
+  if (node.params?.course_selectors_authoritative === false) {
+    return result(
+      node,
+      UNKNOWN,
+      "The course selector is marked ambiguous and needs manual review.",
+      childEvaluations,
+      ["The crawler retained a non-authoritative course selector."],
+    );
+  }
+  if (
+    selectors.some((selector) => !isSupportedCourseSelector(selector)) ||
+    selectorConstraints.some((constraint) =>
+      selectorList(constraint.course_selectors).some(
+        (selector) => !isSupportedCourseSelector(selector),
+      ))
+  ) {
+    return result(
+      node,
+      UNKNOWN,
+      "One or more course selectors are not supported yet.",
+      childEvaluations,
+      ["The course pool contains an unsupported selector."],
+    );
+  }
+  if (references.length === 0 && selectors.length === 0) {
+    return result(
+      node,
+      UNKNOWN,
+      "No course references or selectors were found for this pool.",
+      childEvaluations,
+      ["Course pool has no selectable course source."],
+    );
+  }
+
+  const unresolvedReferences = references.some((reference) => !isResolved(reference));
+  if (unresolvedReferences) {
+    unknownReasons.push("One or more course references could not be resolved.");
+  }
+  const eligibleCourses = uniqueCourses(
+    context.courses.filter((course) => {
+      if (!courseSatisfiesPositiveNode(course, "course_pool", options)) return false;
+      const referenceMatch = references.some((reference) =>
+        isResolved(reference) && matchingCourses(context, reference).includes(course));
+      const selectorMatch = selectors.length > 0 &&
+        matchesCourseSelectorSet(
+          course,
+          selectors,
+          String(node.params?.course_selector_logic ?? "any"),
+        );
+      return referenceMatch || selectorMatch;
+    }),
+  );
+
+  const states: TriState[] = [];
+  const logic = String(node.logic ?? node.operator ?? "any").toLowerCase();
+  const minCount = numberOrNull(node.min_count) ??
+    (node.min_units == null && logic === "at_least" ? 1 : null);
+  const maxCount = numberOrNull(node.max_count);
+  if (
+    minCount != null ||
+    maxCount != null ||
+    ["any", "all", "none", "at_most", "range"].includes(logic) &&
+      node.min_units == null && node.max_units == null
+  ) {
+    const bounds = countBoundsForPool(logic, minCount, maxCount, references.length);
+    states.push(compareBoundedValue(
+      eligibleCourses.length,
+      bounds.minimum,
+      bounds.maximum,
+      unresolvedReferences,
+    ));
+  }
+
+  if (node.min_units != null || node.max_units != null) {
+    const knownUnits = eligibleCourses.reduce(
+      (sum, course) => sum + (isFiniteNumber(course.credits) ? course.credits : 0),
+      0,
+    );
+    const unitsUncertain = unresolvedReferences ||
+      eligibleCourses.some((course) => !isFiniteNumber(course.credits));
+    states.push(compareBoundedValue(
+      knownUnits,
+      numericValue(node.min_units),
+      numericValue(node.max_units),
+      unitsUncertain,
+    ));
+  }
+
+  for (const constraint of selectorConstraints) {
+    const constraintSelectors = selectorList(constraint.course_selectors);
+    const matching = eligibleCourses.filter((course) =>
+      matchesCourseSelectorSet(
+        course,
+        constraintSelectors,
+        String(constraint.course_selector_logic ?? "any"),
+      ));
+    states.push(compareBoundedValue(
+      matching.length,
+      numericValue(constraint.min_count),
+      numericValue(constraint.max_count),
+      false,
+    ));
+  }
+
+  if (states.length === 0) states.push(UNKNOWN);
+  const poolState = aggregateStates(states, "all", null, null);
+  const state = childEvaluations.length === 0
+    ? poolState
+    : aggregateStates(
+        [poolState, ...childEvaluations.map((child) => child.state)],
+        "all",
+        null,
+        null,
+      );
+  const evaluation = result(
+    node,
+    state,
+    state === MET
+      ? "The recorded courses satisfy this course pool."
+      : state === NOT_MET
+        ? "The recorded courses do not yet satisfy this course pool."
+        : "This course pool cannot be fully determined from the recorded courses.",
+    childEvaluations,
+    state === UNKNOWN ? unknownReasons : [],
+  );
+  evaluation.matchedCourseCodes = unique([
+    ...evaluation.matchedCourseCodes,
+    ...eligibleCourses.map((course) => normalizeCourseCode(course.courseCode)),
+  ]);
+  evaluation.referenceEvaluations = references.map((reference) => {
+    const code = referenceCode(reference);
+    if (!isResolved(reference)) {
+      return referenceResult(
+        reference,
+        UNKNOWN,
+        `The course reference${code ? ` ${code}` : ""} could not be resolved.`,
+      );
+    }
+    const matched = eligibleCourses.some((course) =>
+      matchingCourses(context, reference).includes(course));
+    return referenceResult(
+      reference,
+      matched ? MET : NOT_MET,
+      matched
+        ? `${code || "The course"} is counted in this course pool.`
+        : `${code || "The course"} is not in the accepted course record.`,
+    );
+  });
+  return evaluation;
+}
+
+function selectorList(value: unknown): CourseSelector[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is CourseSelector =>
+        typeof item === "object" && item !== null)
+    : [];
+}
+
+function selectorConstraintList(value: unknown): CourseSelector[] {
+  return selectorList(value);
+}
+
+function isSupportedCourseSelector(selector: CourseSelector): boolean {
+  return [
+    "course_level",
+    "course_range",
+    "subject_complement",
+    "subject_level_wildcard",
+    "subject_wildcard",
+  ].includes(String(selector.type ?? ""));
+}
+
+function matchesCourseSelectorSet(
+  course: StudentCourseRecord,
+  selectors: CourseSelector[],
+  rawLogic: string,
+): boolean {
+  if (selectors.length === 0) return false;
+  const matches = selectors.map((selector) => matchesCourseSelector(course, selector));
+  return rawLogic.toLowerCase() === "all"
+    ? matches.every(Boolean)
+    : matches.some(Boolean);
+}
+
+function matchesCourseSelector(
+  course: StudentCourseRecord,
+  selector: CourseSelector,
+): boolean {
+  const parsed = parsedCourseCode(course.courseCode);
+  if (!parsed) return false;
+  const type = String(selector.type ?? "");
+  if (type === "subject_wildcard") {
+    return stringList(selector.subjects).includes(parsed.subject);
+  }
+  if (type === "subject_complement") {
+    return !stringList(selector.excluded_subjects).includes(parsed.subject);
+  }
+  if (type === "course_range") {
+    const subject = normalizeCourseCode(String(selector.subject ?? ""));
+    const minimum = numericValue(selector.minimum);
+    const maximum = numericValue(selector.maximum);
+    return parsed.subject === subject && minimum != null && maximum != null &&
+      parsed.number >= minimum && parsed.number <= maximum;
+  }
+  if (type === "subject_level_wildcard") {
+    if (!stringList(selector.subjects).includes(parsed.subject)) return false;
+    return matchesCourseLevel(parsed.level, selector);
+  }
+  return type === "course_level" && matchesCourseLevel(parsed.level, selector);
+}
+
+function matchesCourseLevel(level: number, selector: CourseSelector): boolean {
+  const comparison = String(selector.comparison ?? "one_of");
+  const levels = numberList(selector.levels);
+  const minimum = numericValue(selector.minimum);
+  const maximum = numericValue(selector.maximum);
+  if (comparison === "at_least") return minimum != null && level >= minimum;
+  if (comparison === "at_most") return maximum != null && level <= maximum;
+  if (comparison === "range") {
+    return minimum != null && maximum != null && level >= minimum && level <= maximum;
+  }
+  return levels.includes(level);
+}
+
+function parsedCourseCode(
+  value: string,
+): { subject: string; number: number; level: number } | null {
+  const match = normalizeCourseCode(value).match(/^([A-Z]+)(\d{3,4})[A-Z]*$/);
+  if (!match) return null;
+  const number = Number(match[2]);
+  return {
+    subject: match[1],
+    number,
+    level: Math.floor(number / 100) * 100,
+  };
+}
+
+function countBoundsForPool(
+  logic: string,
+  minCount: number | null,
+  maxCount: number | null,
+  referenceCount: number,
+): { minimum: number | null; maximum: number | null } {
+  if (logic === "none") return { minimum: 0, maximum: 0 };
+  if (logic === "at_most") return { minimum: 0, maximum: maxCount };
+  if (logic === "range") return { minimum: minCount, maximum: maxCount };
+  if (logic === "all" && minCount == null && referenceCount > 0) {
+    return { minimum: referenceCount, maximum: maxCount };
+  }
+  return { minimum: minCount ?? 1, maximum: maxCount };
+}
+
+function compareBoundedValue(
+  actual: number,
+  minimum: number | null,
+  maximum: number | null,
+  uncertainAdditional: boolean,
+): TriState {
+  if (minimum == null && maximum == null) return UNKNOWN;
+  if (maximum != null && actual > maximum) return NOT_MET;
+  if (minimum != null && actual < minimum) {
+    return uncertainAdditional ? UNKNOWN : NOT_MET;
+  }
+  if (maximum != null && uncertainAdditional) return UNKNOWN;
+  return MET;
+}
+
+function uniqueCourses(courses: StudentCourseRecord[]): StudentCourseRecord[] {
+  const seen = new Set<string>();
+  return courses.filter((course) => {
+    const key = course.coursePid ?? normalizeCourseCode(course.courseCode);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => normalizeCourseCode(String(item))).filter(Boolean)
+    : [];
+}
+
+function numberList(value: unknown): number[] {
+  return Array.isArray(value)
+    ? value.map(numericValue).filter((item): item is number => item != null)
+    : [];
 }
 
 function evaluateForbiddenCourseNode(
@@ -614,6 +978,14 @@ function aggregateStates(
     if (minCount == null) return UNKNOWN;
     minimum = minCount;
     maximum = maxCount ?? states.length;
+  } else if (logic === "at_most") {
+    if (maxCount == null) return UNKNOWN;
+    minimum = 0;
+    maximum = maxCount;
+  } else if (logic === "range") {
+    if (minCount == null || maxCount == null) return UNKNOWN;
+    minimum = minCount;
+    maximum = maxCount;
   } else if (logic === "none") {
     minimum = 0;
     maximum = 0;
@@ -716,7 +1088,8 @@ function referencesOf(node: RequirementNode): RequirementReference[] {
 }
 
 function isResolved(reference: RequirementReference): boolean {
-  return reference.resolution_status === "resolved";
+  return reference.resolution_status === "resolved" ||
+    reference.resolution_status === "code_only";
 }
 
 function referenceCode(reference: RequirementReference): string {
@@ -738,6 +1111,7 @@ function result(
     minCount: numberOrNull(node.min_count),
     maxCount: numberOrNull(node.max_count),
     references: displayReferences(node),
+    presentation: requirementNodePresentation(node),
     state,
     reason,
     referenceEvaluations: [],
@@ -826,7 +1200,29 @@ function hasVerifiedPartialGradeSemantics(document: RequirementDocument): boolea
   return foundVerifiedGradeNode && !foundUnsupportedPartialNode;
 }
 
+function hasOnlyNeutralPartialNodes(document: RequirementDocument): boolean {
+  if (document.sourceFormat === "prose_html" || !document.ast.root) return false;
+  let foundPartialNode = false;
+  let foundBlockingPartialNode = false;
+  const visit = (node: RequirementNode) => {
+    const evaluability = String(node.evaluability ?? "").toLowerCase();
+    const parseStatus = String(node.parse_status ?? "").toLowerCase();
+    const partial = ["unknown", "manual", "partial", "mixed"].includes(evaluability) ||
+      ["unparsed", "partial"].includes(parseStatus);
+    if (partial) {
+      foundPartialNode = true;
+      if (requirementNodePresentation(node) === "condition") {
+        foundBlockingPartialNode = true;
+      }
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(document.ast.root);
+  return foundPartialNode && !foundBlockingPartialNode;
+}
+
 function isUncertain(node: RequirementNode): boolean {
+  if (requirementNodePresentation(node) !== "condition") return false;
   if (isVerifiedGradeCourseNode(node)) return false;
   const evaluability = String(node.evaluability ?? "").toLowerCase();
   const parseStatus = String(node.parse_status ?? "").toLowerCase();

@@ -7,12 +7,24 @@ const source = await readFile(
   new URL("../lib/public-academic.ts", import.meta.url),
   "utf8",
 );
-const javascript = ts.transpileModule(source, {
+const nodeKindsSource = await readFile(
+  new URL("../lib/requirement-node-kinds.ts", import.meta.url),
+  "utf8",
+);
+const nodeKindsJavascript = ts.transpileModule(nodeKindsSource, {
   compilerOptions: {
     module: ts.ModuleKind.ESNext,
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
+const nodeKindsUrl =
+  `data:text/javascript;base64,${Buffer.from(nodeKindsJavascript).toString("base64")}`;
+const javascript = ts.transpileModule(source, {
+  compilerOptions: {
+    module: ts.ModuleKind.ESNext,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText.replace("./requirement-node-kinds", nodeKindsUrl);
 const { summarizePublicRequirement } = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
 );
@@ -74,6 +86,8 @@ test("publishes the bounded AST hierarchy and resolved detail references", () =>
   const choice = summary.root.children[0].children[0];
   assert.equal(choice.logic, "at_least");
   assert.equal(choice.minCount, 1);
+  assert.equal(summary.root.presentation, "structural");
+  assert.equal(choice.presentation, "condition");
   assert.deepEqual(choice.references[0], {
     ordinal: 0,
     targetType: "course",

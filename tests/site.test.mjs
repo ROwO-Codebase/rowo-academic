@@ -153,6 +153,24 @@ test("highlights evaluated leaf conditions only along unmet AST branches", async
   assert.match(styles, /\.leaf-state-not_met/);
 });
 
+test("uses info icons for informative AST nodes and no icons for structure", async () => {
+  const [tree, kinds, styles] = await Promise.all([
+    source("components/RequirementTree.tsx"),
+    source("lib/requirement-node-kinds.ts"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(tree, /presentation === "informational"/);
+  assert.match(tree, /presentation === "condition"/);
+  assert.match(tree, /state-info/);
+  assert.match(tree, /presentation === "structural"\) return ""/);
+  assert.match(kinds, /"table_row"/);
+  assert.match(kinds, /"column"/);
+  assert.match(kinds, /"legend"/);
+  assert.match(kinds, /"course_offering_note"/);
+  assert.match(styles, /\.requirement-node-state\.state-info/);
+});
+
 test("fits long Browse codes and links course details to external resources", async () => {
   const [browser, styles, links] = await Promise.all([
     source("components/GuestAcademicExplorer.tsx"),

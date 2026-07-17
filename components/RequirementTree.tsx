@@ -1,9 +1,11 @@
 import type {
   RequirementDisplayReference,
+  RequirementNodePresentation,
   RequirementReferenceEvaluation,
   TriState,
 } from "@/lib/types";
 import { shouldHighlightRequirementSubconditions } from "@/lib/requirement-highlights";
+import { requirementNodePresentation } from "@/lib/requirement-node-kinds";
 
 export interface RequirementTreeNodeData {
   nodeId: string | null;
@@ -12,6 +14,7 @@ export interface RequirementTreeNodeData {
   logic: string | null;
   minCount: number | null;
   maxCount: number | null;
+  presentation?: RequirementNodePresentation;
   references: RequirementDisplayReference[];
   children: RequirementTreeNodeData[];
   state?: TriState;
@@ -59,16 +62,33 @@ function RequirementTreeNode({
 }) {
   const evaluated = node.nodeId ? evaluations.get(node.nodeId) : undefined;
   const state = evaluated?.state ?? node.state;
-  const showState = !isRoot && highlighted && state !== undefined;
+  const presentation = evaluated?.presentation ?? node.presentation ??
+    requirementNodePresentation({
+      node_type: node.nodeType,
+      params: {},
+      refs: [],
+    });
+  const showState = !isRoot && presentation === "condition" && highlighted &&
+    state !== undefined;
+  const showInformation = !isRoot && presentation === "informational";
   const highlightDescendants = shouldHighlightRequirementSubconditions(
     state,
     highlighted,
   );
-  const text = displayNodeText(node);
+  const text = displayNodeText(node, presentation);
   const content = (
     <>
-      {!isRoot && (
+      {!isRoot && text && (
         <div className="requirement-node-heading">
+          {showInformation && (
+            <span
+              className="requirement-node-state state-info"
+              title="Information"
+              aria-label="Information"
+            >
+              i
+            </span>
+          )}
           {showState && (
             <span
               className={"requirement-node-state state-" + state.toLowerCase()}
@@ -203,7 +223,10 @@ function requirementReferenceHref(
   return null;
 }
 
-function displayNodeText(node: RequirementTreeNodeData): string {
+function displayNodeText(
+  node: RequirementTreeNodeData,
+  presentation: RequirementNodePresentation,
+): string {
   if (node.nodeType === "program_enrolled" && node.references.length > 1) {
     const count = node.minCount ?? 1;
     return `Enrolled in at least ${count} of the following programs:`;
@@ -215,6 +238,7 @@ function displayNodeText(node: RequirementTreeNodeData): string {
     if (node.children.length === 0 && node.references.length === 0) return node.text;
     return /:\s*$/.test(node.text) ? node.text : node.text + ":";
   }
+  if (presentation === "structural") return "";
   if (node.logic === "all") return "Complete all of the following:";
   if (node.logic === "at_least" && node.minCount != null) {
     return `Complete at least ${node.minCount} of the following:`;

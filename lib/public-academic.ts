@@ -2,8 +2,10 @@ import type {
   RequirementDisplayReference,
   RequirementDocument,
   RequirementNode,
+  RequirementNodePresentation,
   RequirementReference,
 } from "./types";
+import { requirementNodePresentation } from "./requirement-node-kinds";
 
 const MAX_REQUIREMENT_TEXT = 4_000;
 const MAX_REQUIREMENT_NODES = 2_000;
@@ -17,6 +19,7 @@ export interface PublicRequirementNode {
   logic: string | null;
   minCount: number | null;
   maxCount: number | null;
+  presentation: RequirementNodePresentation;
   references: RequirementDisplayReference[];
   children: PublicRequirementNode[];
 }
@@ -86,6 +89,7 @@ function summarizeRequirementNode(
     logic: cleanString(node.logic ?? node.operator, 40),
     minCount: finiteNumber(node.min_count),
     maxCount: finiteNumber(node.max_count),
+    presentation: requirementNodePresentation(node),
     references,
     children,
   };

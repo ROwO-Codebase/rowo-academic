@@ -1611,6 +1611,11 @@ button {
   color: var(--amber-800);
 }
 
+.requirement-node-state.state-info {
+  background: var(--indigo-50);
+  color: var(--indigo-700);
+}
+
 .requirement-reference-link,
 .requirement-inferred-link {
   color: var(--indigo-700);

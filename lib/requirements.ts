@@ -801,6 +801,8 @@ function evaluateProgramNode(
   const references = referencesOf(node).filter((reference) =>
     reference.target_type === "program");
   if (references.length === 0) {
+    const inferred = evaluateHonoursMathematicsProgramRule(node, context);
+    if (inferred) return inferred;
     return result(node, UNKNOWN, "No program references were found.", [], [
       "Program rule has no references.",
     ]);
@@ -857,6 +859,8 @@ function evaluateOpaqueProgramRule(
   context: RequirementEvaluationContext,
 ): RequirementNodeEvaluation | null {
   if (node.node_type !== "opaque" || typeof node.text !== "string") return null;
+  const honoursMathematics = evaluateHonoursMathematicsProgramRule(node, context);
+  if (honoursMathematics) return honoursMathematics;
   const match = node.text.trim().match(
     /^Enrolled in\s+(?:an?\s+)?(.+?)\s+program[.:]?$/i,
   );
@@ -882,6 +886,45 @@ function evaluateOpaqueProgramRule(
       ? `A tracked program matches “${match[1].trim()}”.`
       : `No tracked program matches “${match[1].trim()}”.`,
   );
+}
+
+function evaluateHonoursMathematicsProgramRule(
+  node: RequirementNode,
+  context: RequirementEvaluationContext,
+): RequirementNodeEvaluation | null {
+  if (
+    typeof node.text !== "string" ||
+    !isHonoursMathematicsProgramRule(node.text)
+  ) {
+    return null;
+  }
+
+  const eligiblePrograms = (context.programs ?? []).filter((program) =>
+    program.status !== "planned" &&
+    /^H-/i.test(String(program.programCode ?? "").trim()));
+  const found = eligiblePrograms.some((program) =>
+    String(program.faculty ?? "").trim().toLowerCase() ===
+      "faculty of mathematics");
+  const missingFaculty = eligiblePrograms.some((program) => !program.faculty);
+  const state = found ? MET : missingFaculty ? UNKNOWN : NOT_MET;
+  return result(
+    node,
+    state,
+    found
+      ? "A tracked Faculty of Mathematics honours program matches this condition."
+      : missingFaculty
+        ? "A tracked H- program could not be matched because its faculty is unavailable."
+        : "No tracked Faculty of Mathematics program with an H- code matches this condition.",
+    [],
+    missingFaculty && !found
+      ? ["The faculty of a tracked H- program could not be verified."]
+      : [],
+  );
+}
+
+function isHonoursMathematicsProgramRule(text: string): boolean {
+  return /^Enrolled in\s+(?:an?\s+)?Honours Mathematics(?:\s+program)?[.:]?$/i
+    .test(text.trim());
 }
 
 function evaluateNumericConstraints(

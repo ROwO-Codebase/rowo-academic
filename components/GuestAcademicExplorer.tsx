@@ -315,8 +315,19 @@ function PlanExplorer({
       setSearchState("loading");
       setSearchError("");
       try {
+        const honoursMathematicsScope =
+          initialQuery.trim().toUpperCase() === "H-" &&
+          cleanQuery.toUpperCase() === "H-";
+        const searchParams = new URLSearchParams({
+          q: cleanQuery,
+          limit: honoursMathematicsScope ? "50" : "12",
+        });
+        if (honoursMathematicsScope) {
+          searchParams.set("faculty", "Faculty of Mathematics");
+          searchParams.set("codePrefix", "H-");
+        }
         const payload = await requestBrowserJson<ProgramSearchPayload>(
-          "/api/catalog/programs?q=" + encodeURIComponent(cleanQuery) + "&limit=12",
+          "/api/catalog/programs?" + searchParams.toString(),
           { signal },
         );
         setResults(payload.programs || []);
@@ -328,7 +339,7 @@ function PlanExplorer({
         setSearchState("error");
       }
     },
-    [],
+    [initialQuery],
   );
 
   useEffect(() => {

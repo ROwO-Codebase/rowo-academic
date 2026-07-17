@@ -507,6 +507,7 @@ test("evaluates and preserves the real cascaded course-and-program AST shape", (
           {
             programTitle: "Computer Science (Bachelor of Mathematics - Honours)",
             programCode: "H-Computer Science (BMath)",
+            faculty: "Faculty of Mathematics",
             status: "active",
           },
         ],
@@ -534,6 +535,83 @@ test("evaluates and preserves the real cascaded course-and-program AST shape", (
     ]),
   );
   assert.equal(withoutProgram.state, "NOT_MET");
+});
+
+test("matches both Honours Mathematics phrasings to Faculty of Mathematics H- programs", () => {
+  for (const text of [
+    "Enrolled in an Honours Mathematics program",
+    "Enrolled in Honours Mathematics",
+  ]) {
+    const requirement = node("opaque", { text });
+    const matching = evaluateRequirementDocuments(
+      [document(requirement)],
+      context([], {
+        programs: [{
+          programCode: "H-Computer Science (BMath)",
+          programTitle: "Computer Science (Bachelor of Mathematics - Honours)",
+          faculty: "Faculty of Mathematics",
+          status: "active",
+        }],
+      }),
+    );
+    assert.equal(matching.state, "MET", text);
+  }
+
+  const typedProgramNode = evaluateRequirementDocuments(
+    [document(node("program_enrolled", {
+      text: "Enrolled in Honours Mathematics",
+    }))],
+    context([], {
+      programs: [{
+        programCode: "H-Statistics",
+        programTitle: "Statistics (Bachelor of Mathematics - Honours)",
+        faculty: "Faculty of Mathematics",
+        status: "active",
+      }],
+    }),
+  );
+  assert.equal(typedProgramNode.state, "MET");
+
+  const requirement = node("opaque", {
+    text: "Enrolled in Honours Mathematics",
+  });
+  const wrongFaculty = evaluateRequirementDocuments(
+    [document(requirement)],
+    context([], {
+      programs: [{
+        programCode: "H-Anthropology",
+        programTitle: "Anthropology (Bachelor of Arts - Honours)",
+        faculty: "Faculty of Arts",
+        status: "active",
+      }],
+    }),
+  );
+  const wrongPrefix = evaluateRequirementDocuments(
+    [document(requirement)],
+    context([], {
+      programs: [{
+        programCode: "JH-Mathematics",
+        programTitle: "Mathematics (Joint Honours)",
+        faculty: "Faculty of Mathematics",
+        status: "active",
+      }],
+    }),
+  );
+  const planned = evaluateRequirementDocuments(
+    [document(requirement)],
+    context([], {
+      programs: [{
+        programCode: "H-Statistics",
+        programTitle: "Statistics (Bachelor of Mathematics - Honours)",
+        faculty: "Faculty of Mathematics",
+        status: "planned",
+      }],
+    }),
+  );
+
+  assert.equal(wrongFaculty.state, "NOT_MET");
+  assert.equal(wrongPrefix.state, "NOT_MET");
+  assert.equal(planned.state, "NOT_MET");
 });
 
 test("treats structural and pure informational v2 nodes as neutral", () => {

@@ -19,6 +19,10 @@ import {
   normalizeCourseCode,
   validateCourseEligibility,
 } from "@/lib/requirements";
+import {
+  hydrateStudentPrograms,
+  studentProgramEvidence,
+} from "@/lib/student-program-evidence";
 import type {
   AcademicCourse,
   AcademicEnvironment,
@@ -283,19 +287,16 @@ export async function POST(request: Request) {
         academicEnv,
         catalogCourse.pid,
       );
+      const hydratedPrograms = await hydrateStudentPrograms(
+        academicEnv,
+        programs,
+        metadata.catalogId,
+      );
       eligibility = validateCourseEligibility(documents, {
         courses: recordsAvailableByTerm(existing, term as string).map(
           toEvaluationCourse,
         ),
-        programs: programs
-          .filter((program) => program.catalogId === metadata.catalogId)
-          .map((program) => ({
-            programPid: program.programPid,
-            programCode: program.programCode,
-            programTitle: program.programName,
-            programType: program.programType,
-            status: "active" as const,
-          })),
+        programs: studentProgramEvidence(hydratedPrograms),
       });
     }
 

@@ -144,6 +144,32 @@ test("renders actual requirement AST nodes as cascaded linked detail trees", asy
   assert.match(styles, /\.requirement-anchor-target:focus/);
 });
 
+test("links and evaluates Honours Mathematics rules against the exact H- Mathematics set", async () => {
+  const [tree, browser, programSearch, academic, evaluator, evidence, dashboard] =
+    await Promise.all([
+      source("components/RequirementTree.tsx"),
+      source("components/GuestAcademicExplorer.tsx"),
+      source("app/api/catalog/programs/route.ts"),
+      source("lib/academic.ts"),
+      source("lib/requirements.ts"),
+      source("lib/student-program-evidence.ts"),
+      source("app/api/dashboard/route.ts"),
+    ]);
+
+  assert.match(tree, /Enrolled in\\s\+\(\?:an\?\\s\+\)\?Honours Mathematics/);
+  assert.match(tree, /faculty=Faculty%20of%20Mathematics&codePrefix=H-/);
+  assert.match(browser, /honoursMathematicsScope/);
+  assert.match(browser, /searchParams\.set\("faculty", "Faculty of Mathematics"\)/);
+  assert.match(browser, /searchParams\.set\("codePrefix", "H-"\)/);
+  assert.match(programSearch, /"codePrefix"/);
+  assert.match(academic, /program_code LIKE \? ESCAPE/);
+  assert.match(evaluator, /Faculty of Mathematics honours program/);
+  assert.match(evaluator, /\^H-/);
+  assert.match(evidence, /faculty: catalog\?\.faculty \?\? null/);
+  assert.match(dashboard, /hydrateStudentPrograms/);
+  assert.match(dashboard, /studentProgramEvidence/);
+});
+
 test("highlights evaluated leaf conditions only along unmet AST branches", async () => {
   const [tree, highlights, evaluator, styles, courseDetail] = await Promise.all([
     source("components/RequirementTree.tsx"),
@@ -235,7 +261,7 @@ test("tracks multiple plans against one course record and prioritizes overlap", 
   assert.match(dashboardUi, /dashboard\.programs\.map/);
   assert.match(dashboardUi, /Best overlap · \{suggestion\.planCount\} plans/);
   assert.match(dashboardUi, /right\.planCount - left\.planCount/);
-  assert.match(dashboardRoute, /programRows\.map\(async \(savedProgram\)/);
+  assert.match(dashboardRoute, /programRows\.map\(async \(savedProgram(?:, index)?\)/);
   assert.match(dashboardRoute, /recommendationMap/);
   assert.match(dashboardRoute, /right\.programs\.length - left\.programs\.length/);
   assert.match(programRoute, /MAX_SAVED_PROGRAMS/);

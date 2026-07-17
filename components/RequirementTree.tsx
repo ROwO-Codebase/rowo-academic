@@ -232,12 +232,12 @@ function RequirementNodeText({
   node: RequirementTreeNodeData;
   text: string;
 }) {
-  const programQuery = inferredProgramQuery(node);
-  if (!programQuery) return <span>{text}</span>;
+  const programHref = inferredProgramHref(node);
+  if (!programHref) return <span>{text}</span>;
   return (
     <a
       className="requirement-inferred-link"
-      href={"/app?tab=plans&q=" + encodeURIComponent(programQuery)}
+      href={programHref}
       title="Browse matching programs"
     >
       {text}
@@ -371,12 +371,22 @@ function displayNodeText(
   return "Requirement:";
 }
 
-function inferredProgramQuery(node: RequirementTreeNodeData): string | null {
-  if (node.nodeType !== "opaque" || node.references.length > 0 || !node.text) {
+function inferredProgramHref(node: RequirementTreeNodeData): string | null {
+  if (node.references.length > 0 || !node.text) {
     return null;
   }
+  if (
+    /^Enrolled in\s+(?:an?\s+)?Honours Mathematics(?:\s+program)?[.:]?$/i
+      .test(node.text.trim())
+  ) {
+    return "/app?tab=plans&q=H-&faculty=Faculty%20of%20Mathematics&codePrefix=H-";
+  }
+  if (node.nodeType !== "opaque") return null;
   const match = node.text.match(/^Enrolled in\s+(?:an?\s+)?(.+?)\s+program[.:]?$/i);
-  return match?.[1]?.trim() || null;
+  const query = match?.[1]?.trim();
+  return query
+    ? "/app?tab=plans&q=" + encodeURIComponent(query)
+    : null;
 }
 
 function collectEvaluations(

@@ -12,6 +12,7 @@ const MAX_PAGE_SIZE = 50;
 const MAX_OFFSET = 10_000;
 const QUERY_KEYS = new Set([
   "q",
+  "codePrefix",
   "faculty",
   "credentialType",
   "career",
@@ -77,6 +78,11 @@ export async function GET(request: Request) {
     validateQuery(url.searchParams);
     const options: ProgramSearchOptions = {
       query: cleanText(url.searchParams.get("q"), "q", MAX_QUERY_LENGTH),
+      codePrefix: cleanText(
+        url.searchParams.get("codePrefix"),
+        "codePrefix",
+        MAX_FILTER_LENGTH,
+      ),
       faculty: cleanText(
         url.searchParams.get("faculty"),
         "faculty",

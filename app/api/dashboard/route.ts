@@ -6,7 +6,6 @@ import {
   AcademicDataError,
   getCatalogMetadata,
   getCourseByCode,
-  getProgramByPid,
   getProgramRequirementDocuments,
 } from "@/lib/academic";
 import { getLocalSession } from "@/lib/auth";
@@ -19,6 +18,10 @@ import {
   evaluateRequirementDocuments,
   extractCourseRecommendations,
 } from "@/lib/requirements";
+import {
+  hydrateStudentPrograms,
+  studentProgramEvidence,
+} from "@/lib/student-program-evidence";
 import type {
   AcademicEnvironment,
   RequirementEvaluationContext,
@@ -147,18 +150,15 @@ export async function GET(request: Request) {
     const academicEnv = env as unknown as AcademicEnvironment;
     const calendar = await getCatalogMetadata(academicEnv);
     const evaluationCourses = records.map(toEvaluationCourse);
-    const evaluationPrograms = programRows
-      .filter((program) => program.catalogId === calendar.catalogId)
-      .map((program) => ({
-        programPid: program.programPid,
-        programCode: program.programCode,
-        programTitle: program.programName,
-        programType: program.programType,
-        status: "active" as const,
-      }));
+    const hydratedPrograms = await hydrateStudentPrograms(
+      academicEnv,
+      programRows,
+      calendar.catalogId,
+    );
+    const evaluationPrograms = studentProgramEvidence(hydratedPrograms);
     const sharedCompletedUnits = completedUnits(records);
     const programProgress = await Promise.all(
-      programRows.map(async (savedProgram) => {
+      programRows.map(async (savedProgram, index) => {
         const calendarMismatch = savedProgram.catalogId !== calendar.catalogId;
         if (calendarMismatch) {
           return {
@@ -170,10 +170,11 @@ export async function GET(request: Request) {
           };
         }
 
-        const [program, documents] = await Promise.all([
-          getProgramByPid(academicEnv, savedProgram.programPid),
-          getProgramRequirementDocuments(academicEnv, savedProgram.programPid),
-        ]);
+        const program = hydratedPrograms[index]?.catalog ?? null;
+        const documents = await getProgramRequirementDocuments(
+          academicEnv,
+          savedProgram.programPid,
+        );
         const context: RequirementEvaluationContext = {
           courses: evaluationCourses,
           programs: evaluationPrograms,

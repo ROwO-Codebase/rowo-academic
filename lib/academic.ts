@@ -372,6 +372,11 @@ async function queryPrograms(
     );
     params.push(`%${escapeLike(query)}%`, `%${escapeLike(query)}%`);
   }
+  const codePrefix = cleanString(options.codePrefix);
+  if (codePrefix) {
+    clauses.push("program_code LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    params.push(`${escapeLike(codePrefix)}%`);
+  }
   if (cleanString(options.faculty)) {
     clauses.push("faculty = ? COLLATE NOCASE");
     params.push(cleanString(options.faculty));

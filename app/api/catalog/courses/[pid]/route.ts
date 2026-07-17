@@ -11,6 +11,10 @@ import {
 import { getLocalSession } from "@/lib/auth";
 import { summarizePublicRequirement } from "@/lib/public-academic";
 import { validateCourseEligibility } from "@/lib/requirements";
+import {
+  hydrateStudentPrograms,
+  studentProgramEvidence,
+} from "@/lib/student-program-evidence";
 import type { AcademicEnvironment, StudentCourseRecord } from "@/lib/types";
 
 type RouteContext = { params: Promise<{ pid: string }> | { pid: string } };
@@ -85,17 +89,14 @@ export async function GET(request: Request, context: RouteContext) {
       recordedCount = records.filter(
         (record) => record.coursePid === course.pid || record.courseCode === course.code,
       ).length;
+      const hydratedPrograms = await hydrateStudentPrograms(
+        academicEnv,
+        programs,
+        course.catalogId,
+      );
       eligibility = validateCourseEligibility(requirements, {
         courses: records.map(toEvaluationCourse),
-        programs: programs
-          .filter((program) => program.catalogId === course.catalogId)
-          .map((program) => ({
-            programPid: program.programPid,
-            programCode: program.programCode,
-            programTitle: program.programName,
-            programType: program.programType,
-            status: "active" as const,
-          })),
+        programs: studentProgramEvidence(hydratedPrograms),
       });
     }
 

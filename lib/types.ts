@@ -99,6 +99,7 @@ export interface CourseSearchOptions {
 
 export interface ProgramSearchOptions {
   query?: string;
+  codePrefix?: string;
   faculty?: string;
   credentialType?: string;
   career?: string;
@@ -258,6 +259,7 @@ export interface StudentProgramRecord {
   programCode?: string | null;
   programTitle?: string | null;
   programType?: string | null;
+  faculty?: string | null;
   status?: "active" | "completed" | "planned";
 }
 

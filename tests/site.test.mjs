@@ -89,10 +89,11 @@ test("allows guests to inspect plans and courses without exposing personal data 
 });
 
 test("gives signed-in users an account-aware program and course browser", async () => {
-  const [browser, dashboard, courseDetail] = await Promise.all([
+  const [browser, dashboard, courseDetail, styles] = await Promise.all([
     source("components/GuestAcademicExplorer.tsx"),
     source("app/app/AcademicDashboard.tsx"),
     source("app/api/catalog/courses/[pid]/route.ts"),
+    source("app/globals.css"),
   ]);
 
   assert.match(browser, /export function SignedInAcademicBrowser/);
@@ -106,6 +107,8 @@ test("gives signed-in users an account-aware program and course browser", async 
   assert.match(courseDetail, /courseRecords/);
   assert.match(courseDetail, /private, no-store/);
   assert.match(courseDetail, /recordedCount/);
+  assert.doesNotMatch(browser, /className="course-code-list"/);
+  assert.doesNotMatch(styles, /\.course-code-list/);
 });
 
 test("renders actual requirement AST nodes as cascaded linked detail trees", async () => {

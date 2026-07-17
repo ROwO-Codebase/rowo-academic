@@ -591,13 +591,6 @@ function CourseEligibilitySummary({
         <strong>{content.title}</strong>
         <p>{content.description}</p>
       </div>
-      {eligibility.unmetCourseCodes.length > 0 && (
-        <div className="course-code-list" aria-label="Courses still needed">
-          {eligibility.unmetCourseCodes.map((code) => (
-            <span key={code}>{code}</span>
-          ))}
-        </div>
-      )}
       {eligibility.unknownReasons.length > 0 && (
         <ul>
           {eligibility.unknownReasons.slice(0, 3).map((reason) => (

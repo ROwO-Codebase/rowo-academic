@@ -1637,23 +1637,6 @@ button {
   color: var(--slate-600);
 }
 
-.course-code-list {
-  display: flex;
-  margin-top: 12px;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.course-code-list span {
-  padding: 4px 7px;
-  border: 1px solid var(--indigo-100);
-  border-radius: 7px;
-  background: var(--indigo-50);
-  color: var(--indigo-700);
-  font-size: 9px;
-  font-weight: 800;
-}
-
 .guest-requirement-body .guest-requirement-warning {
   padding: 9px 10px;
   border-radius: 8px;

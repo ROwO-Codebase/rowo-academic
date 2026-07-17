@@ -1755,6 +1755,7 @@ function RequirementCard({
             root={requirement.root}
             documentId={requirement.id}
             anchorRegistry={anchorRegistry}
+            showCourseActivity
           />
         </div>
       )}

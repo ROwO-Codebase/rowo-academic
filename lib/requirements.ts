@@ -343,6 +343,7 @@ function evaluatePositiveCourseNode(
       continue;
     }
     const courses = matchingCourses(context, reference);
+    const courseActivity = pendingCourseActivity(courses);
     const accepted = courses.filter((course) =>
       gradeMinimum != null
         ? course.status === "completed"
@@ -358,6 +359,7 @@ function evaluatePositiveCourseNode(
           : gradeMinimum != null
             ? `${code || "The course"} is recorded but has not been completed.`
             : `${code || "The course"} does not have an accepted completion status.`,
+        courseActivity,
       ));
       continue;
     }
@@ -583,12 +585,16 @@ function evaluateCoursePoolAggregate(
     }
     const matched = eligibleCourses.some((course) =>
       matchingCourses(context, reference).includes(course));
+    const courseActivity = pendingCourseActivity(
+      matchingCourses(context, reference),
+    );
     return referenceResult(
       reference,
       matched ? MET : NOT_MET,
       matched
         ? `${code || "The course"} is counted in this course pool.`
         : `${code || "The course"} is not in the accepted course record.`,
+      matched ? undefined : courseActivity,
     );
   });
   return evaluation;
@@ -1013,6 +1019,18 @@ function courseSatisfiesPositiveNode(
   return options.includePlanned === true && course.status === "planned";
 }
 
+function pendingCourseActivity(
+  courses: StudentCourseRecord[],
+): "in_progress" | "planned" | undefined {
+  if (courses.some((course) => course.status === "in_progress")) {
+    return "in_progress";
+  }
+  if (courses.some((course) => course.status === "planned")) {
+    return "planned";
+  }
+  return undefined;
+}
+
 function minimumGrade(node: RequirementNode): number | null {
   const direct = numericValue(node.min_grade_percent ?? node.min_grade);
   if (direct != null) return direct;
@@ -1144,12 +1162,14 @@ function referenceResult(
   reference: RequirementReference,
   state: TriState,
   reason: string,
+  courseActivity?: "in_progress" | "planned",
 ): RequirementReferenceEvaluation {
   return {
     ordinal: numberOrNull(reference.ordinal),
     targetType: String(reference.target_type ?? "unknown"),
     targetPid: stringOrNull(reference.target_pid),
     targetCode: stringOrNull(reference.target_code),
+    ...(courseActivity ? { courseActivity } : {}),
     state,
     reason,
   };

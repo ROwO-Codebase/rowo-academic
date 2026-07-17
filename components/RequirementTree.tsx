@@ -40,11 +40,13 @@ export function RequirementTree({
   evaluation,
   anchorRegistry,
   documentId,
+  showCourseActivity = false,
 }: {
   root: RequirementTreeNodeData;
   evaluation?: RequirementTreeNodeData | null;
   anchorRegistry?: RequirementAnchorRegistry;
   documentId?: string;
+  showCourseActivity?: boolean;
 }) {
   const evaluations = new Map<string, RequirementTreeNodeData>();
   if (evaluation) collectEvaluations(evaluation, evaluations);
@@ -63,6 +65,7 @@ export function RequirementTree({
         node={root}
         evaluations={evaluations}
         anchorRegistry={anchorRegistry}
+        showCourseActivity={showCourseActivity}
         highlighted
         isRoot
       />
@@ -74,12 +77,14 @@ function RequirementTreeNode({
   node,
   evaluations,
   anchorRegistry,
+  showCourseActivity,
   highlighted,
   isRoot = false,
 }: {
   node: RequirementTreeNodeData;
   evaluations: Map<string, RequirementTreeNodeData>;
   anchorRegistry?: RequirementAnchorRegistry;
+  showCourseActivity: boolean;
   highlighted: boolean;
   isRoot?: boolean;
 }) {
@@ -133,11 +138,17 @@ function RequirementTreeNode({
             const referenceEvaluation = highlightDescendants
               ? findReferenceEvaluation(evaluated ?? node, reference, index)
               : undefined;
+            const courseActivity = showCourseActivity &&
+                referenceEvaluation?.state !== "MET"
+              ? referenceEvaluation?.courseActivity
+              : undefined;
+            const leafState = courseActivity ??
+              referenceEvaluation?.state.toLowerCase();
             return (
               <li
                 key={referenceKey(reference, index)}
-                className={referenceEvaluation
-                  ? "leaf-state-" + referenceEvaluation.state.toLowerCase()
+                className={leafState
+                  ? "leaf-state-" + leafState
                   : undefined}
               >
                 <div className="requirement-reference-row">
@@ -145,12 +156,16 @@ function RequirementTreeNode({
                     <span
                       className={
                         "requirement-node-state requirement-reference-state state-" +
-                        referenceEvaluation.state.toLowerCase()
+                        (courseActivity ? "course-activity" : referenceEvaluation.state.toLowerCase())
                       }
                       title={referenceEvaluation.reason}
-                      aria-label={stateMeta[referenceEvaluation.state].label}
+                      aria-label={courseActivity
+                        ? courseActivity === "in_progress"
+                          ? "Course in progress"
+                          : "Course planned"
+                        : stateMeta[referenceEvaluation.state].label}
                     >
-                      {stateMeta[referenceEvaluation.state].symbol}
+                      {courseActivity ? "✎" : stateMeta[referenceEvaluation.state].symbol}
                     </span>
                   )}
                   <RequirementReferenceLink
@@ -176,6 +191,7 @@ function RequirementTreeNode({
                 node={child}
                 evaluations={evaluations}
                 anchorRegistry={anchorRegistry}
+                showCourseActivity={showCourseActivity}
                 highlighted={highlightDescendants}
               />
             </li>

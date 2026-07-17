@@ -112,6 +112,45 @@ test("normalizes course codes and evaluates nested all rules", () => {
   assert.deepEqual(collectUnmetCourseCodes(analysis), ["MATH135"]);
 });
 
+test("marks required course leaves that are in progress or planned", () => {
+  const requirement = document(
+    node("course_completed", { refs: [reference("CS135")] }),
+  );
+  const inProgress = evaluateRequirementDocuments(
+    [requirement],
+    context([
+      { coursePid: "cs135-pid", courseCode: "CS135", status: "in_progress" },
+    ]),
+  );
+  const planned = evaluateRequirementDocuments(
+    [requirement],
+    context([
+      { coursePid: "cs135-pid", courseCode: "CS135", status: "planned" },
+    ]),
+  );
+  const completed = evaluateRequirementDocuments(
+    [requirement],
+    context([
+      { coursePid: "cs135-pid", courseCode: "CS135", status: "completed" },
+    ]),
+  );
+
+  assert.equal(inProgress.state, "NOT_MET");
+  assert.equal(
+    inProgress.documents[0].root.referenceEvaluations[0].courseActivity,
+    "in_progress",
+  );
+  assert.equal(planned.state, "NOT_MET");
+  assert.equal(
+    planned.documents[0].root.referenceEvaluations[0].courseActivity,
+    "planned",
+  );
+  assert.equal(
+    completed.documents[0].root.referenceEvaluations[0].courseActivity,
+    undefined,
+  );
+});
+
 test("a met any alternative safely dominates an unresolved alternative", () => {
   const root = node("root", {
     logic: "any",
@@ -287,6 +326,10 @@ test("known antirequisite violations make a course ineligible", () => {
   assert.equal(result.state, "NOT_MET");
   assert.equal(result.eligible, false);
   assert.equal(result.needsReview, false);
+  assert.equal(
+    result.documents[0].root.referenceEvaluations[0].courseActivity,
+    undefined,
+  );
 });
 
 test("partial documents cannot become definitely met", () => {

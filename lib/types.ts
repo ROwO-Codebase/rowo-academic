@@ -233,6 +233,7 @@ export interface RequirementReferenceEvaluation {
   targetType: string;
   targetPid: string | null;
   targetCode: string | null;
+  courseActivity?: "in_progress" | "planned";
   state: TriState;
   reason: string;
 }

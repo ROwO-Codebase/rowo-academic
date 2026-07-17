@@ -161,6 +161,25 @@ test("highlights evaluated leaf conditions only along unmet AST branches", async
   assert.match(styles, /\.leaf-state-not_met/);
 });
 
+test("uses a pencil for planned and in-progress required courses in Progress", async () => {
+  const [tree, dashboard, evaluator, styles] = await Promise.all([
+    source("components/RequirementTree.tsx"),
+    source("app/app/AcademicDashboard.tsx"),
+    source("lib/requirements.ts"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(tree, /showCourseActivity/);
+  assert.match(tree, /courseActivity \? "✎"/);
+  assert.match(tree, /Course in progress/);
+  assert.match(tree, /Course planned/);
+  assert.match(dashboard, /showCourseActivity/);
+  assert.match(evaluator, /pendingCourseActivity/);
+  assert.match(styles, /\.state-course-activity/);
+  assert.match(styles, /\.leaf-state-in_progress/);
+  assert.match(styles, /\.leaf-state-planned/);
+});
+
 test("uses info icons for informative AST nodes and no icons for structure", async () => {
   const [tree, kinds, styles] = await Promise.all([
     source("components/RequirementTree.tsx"),

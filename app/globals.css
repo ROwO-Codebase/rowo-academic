@@ -1626,6 +1626,24 @@ button {
   color: var(--indigo-700);
 }
 
+.requirement-node-state.state-course-activity {
+  background: var(--indigo-50);
+  color: var(--indigo-700);
+  font-size: 10px;
+}
+
+.requirement-reference-list > li.leaf-state-in_progress::before,
+.requirement-reference-list > li.leaf-state-planned::before {
+  background: var(--indigo-500);
+}
+
+.requirement-reference-list > li.leaf-state-in_progress .requirement-reference-link,
+.requirement-reference-list > li.leaf-state-in_progress .requirement-leaf-reason,
+.requirement-reference-list > li.leaf-state-planned .requirement-reference-link,
+.requirement-reference-list > li.leaf-state-planned .requirement-leaf-reason {
+  color: var(--indigo-700);
+}
+
 .requirement-reference-link,
 .requirement-inferred-link {
   color: var(--indigo-700);

@@ -144,6 +144,22 @@ test("renders actual requirement AST nodes as cascaded linked detail trees", asy
   assert.match(styles, /\.requirement-anchor-target:focus/);
 });
 
+test("shows parse status only for course-requirement sections in plan views", async () => {
+  const [browser, dashboard, sections] = await Promise.all([
+    source("components/GuestAcademicExplorer.tsx"),
+    source("app/app/AcademicDashboard.tsx"),
+    source("lib/requirement-sections.ts"),
+  ]);
+
+  assert.match(browser, /courseRequirementParseStatusOnly/);
+  assert.match(browser, /isCourseRequirementSection\(requirement\.kind\)/);
+  assert.match(browser, /emptyMessage="No structured requirement information is available for this plan\."[\s\S]*?courseRequirementParseStatusOnly/);
+  assert.match(dashboard, /isCourseRequirementSection\(document\.requirementKind\)/);
+  assert.match(dashboard, /document\.parseStatus[\s\S]*?filter\(Boolean\)\.join\(" · "\)/);
+  assert.match(sections, /courserequirement/);
+  assert.match(sections, /courserequirements/);
+});
+
 test("links and evaluates Honours Mathematics rules against the exact H- Mathematics set", async () => {
   const [tree, browser, programSearch, academic, evaluator, evidence, dashboard] =
     await Promise.all([

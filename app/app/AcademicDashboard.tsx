@@ -16,6 +16,7 @@ import {
   isNonAcademicCourseCode,
 } from "@/lib/course-records";
 import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
+import { isCourseRequirementSection } from "@/lib/requirement-sections";
 import {
   buildRequirementAnchorRegistry,
   buildTrackedProgramAnchorRegistry,
@@ -497,10 +498,12 @@ function normalizeRequirements(
       evidence: matched,
       missing: unmet,
       note: unknownReasons[0] || document.warnings[0] || null,
-      sourceLabel:
-        readableRequirementName(document.sourceField) +
-        " · " +
-        document.parseStatus,
+      sourceLabel: [
+        readableRequirementName(document.sourceField),
+        isCourseRequirementSection(document.requirementKind)
+          ? document.parseStatus
+          : null,
+      ].filter(Boolean).join(" · "),
       root: document.root,
     };
   });

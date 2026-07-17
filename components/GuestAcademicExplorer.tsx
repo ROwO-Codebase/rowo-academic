@@ -15,6 +15,7 @@ import type {
 import type { PublicRequirementSummary } from "@/lib/public-academic";
 import { isNonAcademicCourseCode } from "@/lib/course-records";
 import { buildRequirementAnchorRegistry } from "@/lib/requirement-anchors";
+import { isCourseRequirementSection } from "@/lib/requirement-sections";
 import {
   uwflowCourseUrl,
   waterlooCourseOutlineUrl,
@@ -208,6 +209,7 @@ function RequirementInformation({
   emptyMessage,
   ownerPid,
   evaluations = [],
+  courseRequirementParseStatusOnly = false,
 }: {
   requirements: PublicRequirementSummary[];
   emptyMessage: string;
@@ -216,6 +218,7 @@ function RequirementInformation({
     documentId: string;
     root: RequirementTreeNodeData | null;
   }>;
+  courseRequirementParseStatusOnly?: boolean;
 }) {
   if (requirements.length === 0) {
     return <div className="inline-empty">{emptyMessage}</div>;
@@ -243,9 +246,12 @@ function RequirementInformation({
               <strong>{readableLabel(requirement.kind)}</strong>
               <small>{readableLabel(requirement.sourceField)}</small>
             </span>
-            <span className={"parse-status parse-" + requirement.parseStatus}>
-              {readableLabel(requirement.parseStatus)}
-            </span>
+            {(!courseRequirementParseStatusOnly ||
+              isCourseRequirementSection(requirement.kind)) && (
+              <span className={"parse-status parse-" + requirement.parseStatus}>
+                {readableLabel(requirement.parseStatus)}
+              </span>
+            )}
           </summary>
           <div className="guest-requirement-body">
             {requirement.root ? (
@@ -568,6 +574,7 @@ function PlanExplorer({
                 requirements={detail.requirements}
                 ownerPid={detail.program.pid}
                 emptyMessage="No structured requirement information is available for this plan."
+                courseRequirementParseStatusOnly
               />
             </>
           )}

@@ -151,6 +151,22 @@ test("marks required course leaves that are in progress or planned", () => {
   );
 });
 
+test("planner eligibility can count a planned prerequisite", () => {
+  const prerequisite = document(
+    node("course_completed", { refs: [reference("CS135")] }),
+  );
+  const result = validateCourseEligibility(
+    [prerequisite],
+    context([
+      { coursePid: "cs135-pid", courseCode: "CS135", status: "planned" },
+    ]),
+    { includePlanned: true },
+  );
+
+  assert.equal(result.state, "MET");
+  assert.equal(result.eligible, true);
+});
+
 test("a met any alternative safely dominates an unresolved alternative", () => {
   const root = node("root", {
     logic: "any",

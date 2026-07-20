@@ -111,6 +111,21 @@ test("gives signed-in users an account-aware program and course browser", async 
   assert.doesNotMatch(styles, /\.course-code-list/);
 });
 
+test("checks every planned course against strictly earlier planner terms", async () => {
+  const [dashboard, eligibilityRoute, courseRecords] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/api/planner/eligibility/route.ts"),
+    source("lib/course-records.ts"),
+  ]);
+
+  assert.match(dashboard, /"Check eligibility"/);
+  assert.match(dashboard, /\/api\/planner\/eligibility/);
+  assert.match(eligibilityRoute, /record\.status === "planned"/);
+  assert.match(eligibilityRoute, /isEarlierAcademicTerm\(record\.term, course\.term\)/);
+  assert.match(eligibilityRoute, /\{ includePlanned: true \}/);
+  assert.match(courseRecords, /candidateSequence < targetSequence/);
+});
+
 test("renders actual requirement AST nodes as cascaded linked detail trees", async () => {
   const [summary, tree, anchors, browser, dashboard, styles] = await Promise.all([
     source("lib/public-academic.ts"),

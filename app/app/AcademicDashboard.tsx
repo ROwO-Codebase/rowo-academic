@@ -292,6 +292,23 @@ interface ApiCourseMutationPayload {
   } | null;
 }
 
+interface ApiPlannerEligibilityResult {
+  courseId: string;
+  courseCode: string;
+  term: string | null;
+  state: "MET" | "NOT_MET" | "UNKNOWN";
+  eligible: boolean;
+  needsReview: boolean;
+  reliesOnPlanned: boolean;
+  unmetCourseCodes: string[];
+  unknownReasons: string[];
+}
+
+interface ApiPlannerEligibilityPayload {
+  success: boolean;
+  results: ApiPlannerEligibilityResult[];
+}
+
 class ApiError extends Error {
   status: number;
 
@@ -586,7 +603,7 @@ function normalizeDashboardPayload(
       eligibility: mappedStatus === "planned" ? "unknown" : undefined,
       eligibilityMessage:
         mappedStatus === "planned"
-          ? "Open or update this course to run its current eligibility check."
+          ? "Use Check eligibility to evaluate this course against earlier terms."
           : null,
     };
   });
@@ -2045,6 +2062,12 @@ function PlannerPanel({
   setBusyCourseId: (id: string | null) => void;
   setNotice: (message: string) => void;
 }) {
+  const [eligibilityCheckState, setEligibilityCheckState] = useState<
+    "idle" | "checking"
+  >("idle");
+  const [eligibilityResults, setEligibilityResults] = useState(
+    () => new Map<string, ApiPlannerEligibilityResult>(),
+  );
   const terms = useMemo(() => {
     const sorted = [...dashboard.terms].sort((a, b) => a.sequence - b.sequence);
     const knownLabels = new Set(sorted.map((term) => term.label));
@@ -2066,6 +2089,64 @@ function PlannerPanel({
       })),
     ];
   }, [dashboard.courses, dashboard.terms]);
+  const plannedCourseCount = dashboard.courses.filter(
+    (course) => course.status === "planned",
+  ).length;
+
+  async function checkEligibility() {
+    setEligibilityCheckState("checking");
+    try {
+      const response = await requestJson<ApiPlannerEligibilityPayload>(
+        "/api/planner/eligibility",
+      );
+      setEligibilityResults(
+        new Map(response.results.map((result) => [result.courseId, result])),
+      );
+      setNotice(
+        response.results.length === 1
+          ? "Eligibility checked for 1 planned course."
+          : "Eligibility checked for " +
+            response.results.length +
+            " planned courses.",
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Planner eligibility could not be checked.",
+      );
+    } finally {
+      setEligibilityCheckState("idle");
+    }
+  }
+
+  function checkedEligibilityStatus(
+    result: ApiPlannerEligibilityResult,
+  ): EligibilityStatus {
+    if (result.state === "MET") {
+      return result.reliesOnPlanned ? "provisional" : "eligible";
+    }
+    if (result.state === "NOT_MET") return "blocked";
+    return "unknown";
+  }
+
+  function checkedEligibilityMessage(
+    result: ApiPlannerEligibilityResult,
+  ): string {
+    if (result.state === "MET") {
+      return result.reliesOnPlanned
+        ? "Eligible when planned courses in earlier terms are included."
+        : "Eligible based on courses in earlier terms.";
+    }
+    if (result.state === "NOT_MET") {
+      return result.unmetCourseCodes.length > 0
+        ? "Needed in an earlier term: " +
+            result.unmetCourseCodes.join(", ") +
+            "."
+        : "One or more catalog requirements are not met by earlier terms.";
+    }
+    return result.unknownReasons[0] || "Some catalog requirements need review.";
+  }
 
   async function moveCourse(course: DashboardCourse, term: PlannerTerm) {
     setBusyCourseId(course.id);
@@ -2074,6 +2155,7 @@ function PlannerPanel({
         method: "PATCH",
         body: JSON.stringify({ status: "planned", term: term.label }),
       });
+      setEligibilityResults(new Map());
       setNotice(course.code + " moved to " + term.label + ".");
       await onReload();
     } catch (error) {
@@ -2096,14 +2178,29 @@ function PlannerPanel({
             planned courses make them eligible by that term.
           </p>
         </div>
-        <button
-          className="button button-primary"
-          type="button"
-          onClick={() => onAddToTerm(terms[0]?.label || "")}
-        >
-          Add planned course
-          <span aria-hidden="true">＋</span>
-        </button>
+        <div className="panel-heading-actions">
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={
+              plannedCourseCount === 0 || eligibilityCheckState === "checking"
+            }
+            onClick={() => void checkEligibility()}
+          >
+            {eligibilityCheckState === "checking"
+              ? "Checking eligibility…"
+              : "Check eligibility"}
+            <span aria-hidden="true">✓</span>
+          </button>
+          <button
+            className="button button-primary"
+            type="button"
+            onClick={() => onAddToTerm(terms[0]?.label || "")}
+          >
+            Add planned course
+            <span aria-hidden="true">＋</span>
+          </button>
+        </div>
       </section>
 
       <div className="planner-notice">
@@ -2242,55 +2339,65 @@ function PlannerPanel({
                   {courses.length === 0 && (
                     <div className="term-empty">No planned courses</div>
                   )}
-                  {courses.map((course) => (
-                    <article className="planned-course-card" key={course.id}>
-                      <div className="planned-course-top">
-                        <div>
-                          <strong>{course.code}</strong>
-                          <h3>{course.title}</h3>
+                  {courses.map((course) => {
+                    const checkedEligibility = eligibilityResults.get(course.id);
+                    const eligibilityStatus = checkedEligibility
+                      ? checkedEligibilityStatus(checkedEligibility)
+                      : course.eligibility;
+                    const eligibilityMessage = checkedEligibility
+                      ? checkedEligibilityMessage(checkedEligibility)
+                      : course.eligibilityMessage;
+                    return (
+                      <article className="planned-course-card" key={course.id}>
+                        <div className="planned-course-top">
+                          <div>
+                            <strong>{course.code}</strong>
+                            <h3>{course.title}</h3>
+                          </div>
+                          <span>
+                            {course.nonAcademic
+                              ? "Non-academic"
+                              : formatUnits(course.credits) + " units"}
+                          </span>
                         </div>
-                        <span>
-                          {course.nonAcademic
-                            ? "Non-academic"
-                            : formatUnits(course.credits) + " units"}
-                        </span>
-                      </div>
-                      <EligibilityBadge status={course.eligibility} />
-                      {course.eligibilityMessage && (
-                        <p>{course.eligibilityMessage}</p>
-                      )}
-                      {course.fulfills && course.fulfills.length > 0 && (
-                        <small>Counts toward {course.fulfills.join(", ")}</small>
-                      )}
-                      <div className="move-controls" aria-label={"Move " + course.code}>
-                        <button
-                          type="button"
-                          disabled={
-                            termIndex === 0 || busyCourseId === course.id
-                          }
-                          onClick={() =>
-                            void moveCourse(course, terms[termIndex - 1])
-                          }
-                          aria-label={"Move " + course.code + " to previous term"}
+                        <EligibilityBadge status={eligibilityStatus} />
+                        {eligibilityMessage && <p>{eligibilityMessage}</p>}
+                        {course.fulfills && course.fulfills.length > 0 && (
+                          <small>Counts toward {course.fulfills.join(", ")}</small>
+                        )}
+                        <div
+                          className="move-controls"
+                          aria-label={"Move " + course.code}
                         >
-                          ← Earlier
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            termIndex === terms.length - 1 ||
-                            busyCourseId === course.id
-                          }
-                          onClick={() =>
-                            void moveCourse(course, terms[termIndex + 1])
-                          }
-                          aria-label={"Move " + course.code + " to next term"}
-                        >
-                          Later →
-                        </button>
-                      </div>
-                    </article>
-                  ))}
+                          <button
+                            type="button"
+                            disabled={
+                              termIndex === 0 || busyCourseId === course.id
+                            }
+                            onClick={() =>
+                              void moveCourse(course, terms[termIndex - 1])
+                            }
+                            aria-label={"Move " + course.code + " to previous term"}
+                          >
+                            ← Earlier
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              termIndex === terms.length - 1 ||
+                              busyCourseId === course.id
+                            }
+                            onClick={() =>
+                              void moveCourse(course, terms[termIndex + 1])
+                            }
+                            aria-label={"Move " + course.code + " to next term"}
+                          >
+                            Later →
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
                 <button
                   className="add-to-term"

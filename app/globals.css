@@ -2216,6 +2216,13 @@ button {
   max-width: 740px;
 }
 
+.panel-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .segmented-control {
   display: flex;
   padding: 3px;
@@ -3936,6 +3943,12 @@ button {
   .dashboard-hero .button,
   .panel-heading .button {
     width: 100%;
+  }
+
+  .panel-heading-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .degree-progress-card {

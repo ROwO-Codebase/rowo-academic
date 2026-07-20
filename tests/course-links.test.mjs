@@ -13,12 +13,16 @@ const javascript = ts.transpileModule(source, {
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
-const { uwflowCourseUrl, waterlooCourseOutlineUrl } = await import(
+const { redditCourseSearchUrl, uwflowCourseUrl, waterlooCourseOutlineUrl } = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
 );
 
 test("builds external course links with each service's required code format", () => {
   assert.equal(uwflowCourseUrl("CS 487"), "https://uwflow.com/course/cs487");
+  assert.equal(
+    redditCourseSearchUrl("CS 135"),
+    "https://www.reddit.com/r/uwaterloo/search/?q=cs135",
+  );
   assert.equal(
     waterlooCourseOutlineUrl("CS487"),
     "https://outline.uwaterloo.ca/viewer/?q=CS%20487",

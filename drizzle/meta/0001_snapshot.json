@@ -1,0 +1,889 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "8376d545-ce61-4cff-8e76-cfd50f038463",
+  "prevId": "20739471-0da7-484e-a929-c38243f4a2f4",
+  "tables": {
+    "course_records": {
+      "name": "course_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "catalog_id": {
+          "name": "catalog_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "course_pid": {
+          "name": "course_pid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "course_version_id": {
+          "name": "course_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "course_code": {
+          "name": "course_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "course_title": {
+          "name": "course_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "term": {
+          "name": "term",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "grade": {
+          "name": "grade",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "credits": {
+          "name": "credits",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "calendar_year": {
+          "name": "calendar_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "course_records_user_course_term_uq": {
+          "name": "course_records_user_course_term_uq",
+          "columns": [
+            "user_id",
+            "course_code",
+            "term"
+          ],
+          "isUnique": true
+        },
+        "course_records_user_course_unscheduled_uq": {
+          "name": "course_records_user_course_unscheduled_uq",
+          "columns": [
+            "user_id",
+            "course_code"
+          ],
+          "isUnique": true,
+          "where": "\"course_records\".\"term\" is null"
+        },
+        "course_records_user_status_idx": {
+          "name": "course_records_user_status_idx",
+          "columns": [
+            "user_id",
+            "status"
+          ],
+          "isUnique": false
+        },
+        "course_records_catalog_id_idx": {
+          "name": "course_records_catalog_id_idx",
+          "columns": [
+            "catalog_id"
+          ],
+          "isUnique": false
+        },
+        "course_records_user_course_idx": {
+          "name": "course_records_user_course_idx",
+          "columns": [
+            "user_id",
+            "course_code"
+          ],
+          "isUnique": false
+        },
+        "course_records_user_term_idx": {
+          "name": "course_records_user_term_idx",
+          "columns": [
+            "user_id",
+            "term"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "course_records_user_id_users_id_fk": {
+          "name": "course_records_user_id_users_id_fk",
+          "tableFrom": "course_records",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "course_records_catalog_id_nonempty": {
+          "name": "course_records_catalog_id_nonempty",
+          "value": "length(\"course_records\".\"catalog_id\") > 0"
+        },
+        "course_records_pid_nonempty": {
+          "name": "course_records_pid_nonempty",
+          "value": "length(\"course_records\".\"course_pid\") > 0"
+        },
+        "course_records_version_id_nonempty": {
+          "name": "course_records_version_id_nonempty",
+          "value": "length(\"course_records\".\"course_version_id\") > 0"
+        },
+        "course_records_code_nonempty": {
+          "name": "course_records_code_nonempty",
+          "value": "length(\"course_records\".\"course_code\") > 0"
+        },
+        "course_records_status_valid": {
+          "name": "course_records_status_valid",
+          "value": "\"course_records\".\"status\" in ('completed', 'in_progress', 'planned', 'transfer')"
+        },
+        "course_records_credits_nonnegative": {
+          "name": "course_records_credits_nonnegative",
+          "value": "\"course_records\".\"credits\" is null or \"course_records\".\"credits\" >= 0"
+        },
+        "course_records_grade_matches_status": {
+          "name": "course_records_grade_matches_status",
+          "value": "\"course_records\".\"grade\" is null or \"course_records\".\"status\" in ('completed', 'transfer')"
+        },
+        "course_records_active_term_required": {
+          "name": "course_records_active_term_required",
+          "value": "\"course_records\".\"status\" not in ('planned', 'in_progress') or (\"course_records\".\"term\" is not null and length(trim(\"course_records\".\"term\")) > 0)"
+        },
+        "course_records_calendar_year_valid": {
+          "name": "course_records_calendar_year_valid",
+          "value": "\"course_records\".\"calendar_year\" between 2000 and 9999"
+        }
+      }
+    },
+    "requirement_node_override_references": {
+      "name": "requirement_node_override_references",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "override_id": {
+          "name": "override_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_type": {
+          "name": "target_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_pid": {
+          "name": "target_pid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_version_id": {
+          "name": "target_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_code": {
+          "name": "target_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_title": {
+          "name": "target_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "credits": {
+          "name": "credits",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "requirement_node_override_refs_target_uq": {
+          "name": "requirement_node_override_refs_target_uq",
+          "columns": [
+            "override_id",
+            "target_type",
+            "target_pid"
+          ],
+          "isUnique": true
+        },
+        "requirement_node_override_refs_override_idx": {
+          "name": "requirement_node_override_refs_override_idx",
+          "columns": [
+            "override_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "requirement_node_override_references_override_id_requirement_node_overrides_id_fk": {
+          "name": "requirement_node_override_references_override_id_requirement_node_overrides_id_fk",
+          "tableFrom": "requirement_node_override_references",
+          "tableTo": "requirement_node_overrides",
+          "columnsFrom": [
+            "override_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "requirement_node_override_refs_target_type_valid": {
+          "name": "requirement_node_override_refs_target_type_valid",
+          "value": "\"requirement_node_override_references\".\"target_type\" in ('course', 'program')"
+        },
+        "requirement_node_override_refs_target_pid_nonempty": {
+          "name": "requirement_node_override_refs_target_pid_nonempty",
+          "value": "length(\"requirement_node_override_references\".\"target_pid\") > 0"
+        },
+        "requirement_node_override_refs_target_version_id_nonempty": {
+          "name": "requirement_node_override_refs_target_version_id_nonempty",
+          "value": "length(\"requirement_node_override_references\".\"target_version_id\") > 0"
+        },
+        "requirement_node_override_refs_target_code_nonempty": {
+          "name": "requirement_node_override_refs_target_code_nonempty",
+          "value": "length(\"requirement_node_override_references\".\"target_code\") > 0"
+        },
+        "requirement_node_override_refs_target_title_nonempty": {
+          "name": "requirement_node_override_refs_target_title_nonempty",
+          "value": "length(\"requirement_node_override_references\".\"target_title\") > 0"
+        },
+        "requirement_node_override_refs_credits_nonnegative": {
+          "name": "requirement_node_override_refs_credits_nonnegative",
+          "value": "\"requirement_node_override_references\".\"credits\" is null or \"requirement_node_override_references\".\"credits\" >= 0"
+        }
+      }
+    },
+    "requirement_node_overrides": {
+      "name": "requirement_node_overrides",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_program_id": {
+          "name": "user_program_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "catalog_id": {
+          "name": "catalog_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_version_id": {
+          "name": "program_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "document_source_hash": {
+          "name": "document_source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "node_key": {
+          "name": "node_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "requirement_node_overrides_current_node_uq": {
+          "name": "requirement_node_overrides_current_node_uq",
+          "columns": [
+            "user_id",
+            "user_program_id",
+            "catalog_id",
+            "program_version_id",
+            "document_id",
+            "document_source_hash",
+            "node_key"
+          ],
+          "isUnique": true
+        },
+        "requirement_node_overrides_user_program_idx": {
+          "name": "requirement_node_overrides_user_program_idx",
+          "columns": [
+            "user_id",
+            "user_program_id"
+          ],
+          "isUnique": false
+        },
+        "requirement_node_overrides_document_idx": {
+          "name": "requirement_node_overrides_document_idx",
+          "columns": [
+            "user_program_id",
+            "document_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "requirement_node_overrides_user_id_users_id_fk": {
+          "name": "requirement_node_overrides_user_id_users_id_fk",
+          "tableFrom": "requirement_node_overrides",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "requirement_node_overrides_user_program_id_user_programs_id_fk": {
+          "name": "requirement_node_overrides_user_program_id_user_programs_id_fk",
+          "tableFrom": "requirement_node_overrides",
+          "tableTo": "user_programs",
+          "columnsFrom": [
+            "user_program_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "requirement_node_overrides_catalog_id_nonempty": {
+          "name": "requirement_node_overrides_catalog_id_nonempty",
+          "value": "length(\"requirement_node_overrides\".\"catalog_id\") > 0"
+        },
+        "requirement_node_overrides_program_version_id_nonempty": {
+          "name": "requirement_node_overrides_program_version_id_nonempty",
+          "value": "length(\"requirement_node_overrides\".\"program_version_id\") > 0"
+        },
+        "requirement_node_overrides_document_id_nonempty": {
+          "name": "requirement_node_overrides_document_id_nonempty",
+          "value": "length(\"requirement_node_overrides\".\"document_id\") > 0"
+        },
+        "requirement_node_overrides_source_hash_nonempty": {
+          "name": "requirement_node_overrides_source_hash_nonempty",
+          "value": "length(\"requirement_node_overrides\".\"document_source_hash\") > 0"
+        },
+        "requirement_node_overrides_node_key_nonempty": {
+          "name": "requirement_node_overrides_node_key_nonempty",
+          "value": "length(\"requirement_node_overrides\".\"node_key\") > 0"
+        },
+        "requirement_node_overrides_node_id_nonempty": {
+          "name": "requirement_node_overrides_node_id_nonempty",
+          "value": "\"requirement_node_overrides\".\"node_id\" is null or length(\"requirement_node_overrides\".\"node_id\") > 0"
+        },
+        "requirement_node_overrides_state_valid": {
+          "name": "requirement_node_overrides_state_valid",
+          "value": "\"requirement_node_overrides\".\"state\" is null or \"requirement_node_overrides\".\"state\" in ('MET', 'NOT_MET', 'UNKNOWN')"
+        },
+        "requirement_node_overrides_note_length": {
+          "name": "requirement_node_overrides_note_length",
+          "value": "\"requirement_node_overrides\".\"note\" is null or length(\"requirement_node_overrides\".\"note\") <= 4000"
+        }
+      }
+    },
+    "sessions": {
+      "name": "sessions",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sessions_user_id_idx": {
+          "name": "sessions_user_id_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        },
+        "sessions_expires_at_idx": {
+          "name": "sessions_expires_at_idx",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sessions_token_hash_shape": {
+          "name": "sessions_token_hash_shape",
+          "value": "length(\"sessions\".\"token_hash\") = 64 and \"sessions\".\"token_hash\" not glob '*[^0-9a-f]*'"
+        },
+        "sessions_expiry_after_creation": {
+          "name": "sessions_expiry_after_creation",
+          "value": "\"sessions\".\"expires_at\" > \"sessions\".\"created_at\""
+        }
+      }
+    },
+    "user_programs": {
+      "name": "user_programs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "catalog_id": {
+          "name": "catalog_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_pid": {
+          "name": "program_pid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_version_id": {
+          "name": "program_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_code": {
+          "name": "program_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_name": {
+          "name": "program_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "calendar_year": {
+          "name": "calendar_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_type": {
+          "name": "program_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'program'"
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "user_programs_user_code_year_uq": {
+          "name": "user_programs_user_code_year_uq",
+          "columns": [
+            "user_id",
+            "program_code",
+            "calendar_year"
+          ],
+          "isUnique": true
+        },
+        "user_programs_one_primary_uq": {
+          "name": "user_programs_one_primary_uq",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": true,
+          "where": "\"user_programs\".\"is_primary\" = 1"
+        },
+        "user_programs_user_id_idx": {
+          "name": "user_programs_user_id_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        },
+        "user_programs_catalog_id_idx": {
+          "name": "user_programs_catalog_id_idx",
+          "columns": [
+            "catalog_id"
+          ],
+          "isUnique": false
+        },
+        "user_programs_calendar_year_idx": {
+          "name": "user_programs_calendar_year_idx",
+          "columns": [
+            "calendar_year"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "user_programs_user_id_users_id_fk": {
+          "name": "user_programs_user_id_users_id_fk",
+          "tableFrom": "user_programs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_programs_catalog_id_nonempty": {
+          "name": "user_programs_catalog_id_nonempty",
+          "value": "length(\"user_programs\".\"catalog_id\") > 0"
+        },
+        "user_programs_pid_nonempty": {
+          "name": "user_programs_pid_nonempty",
+          "value": "length(\"user_programs\".\"program_pid\") > 0"
+        },
+        "user_programs_version_id_nonempty": {
+          "name": "user_programs_version_id_nonempty",
+          "value": "length(\"user_programs\".\"program_version_id\") > 0"
+        },
+        "user_programs_code_nonempty": {
+          "name": "user_programs_code_nonempty",
+          "value": "length(\"user_programs\".\"program_code\") > 0"
+        },
+        "user_programs_name_nonempty": {
+          "name": "user_programs_name_nonempty",
+          "value": "length(\"user_programs\".\"program_name\") > 0"
+        },
+        "user_programs_type_nonempty": {
+          "name": "user_programs_type_nonempty",
+          "value": "length(\"user_programs\".\"program_type\") > 0"
+        },
+        "user_programs_calendar_year_valid": {
+          "name": "user_programs_calendar_year_valid",
+          "value": "\"user_programs\".\"calendar_year\" between 2000 and 9999"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rowo_user_id": {
+          "name": "rowo_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "wechat_id": {
+          "name": "wechat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'user'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "users_rowo_user_id_uq": {
+          "name": "users_rowo_user_id_uq",
+          "columns": [
+            "rowo_user_id"
+          ],
+          "isUnique": true
+        },
+        "users_username_idx": {
+          "name": "users_username_idx",
+          "columns": [
+            "username"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "users_rowo_user_id_nonempty": {
+          "name": "users_rowo_user_id_nonempty",
+          "value": "length(\"users\".\"rowo_user_id\") > 0"
+        },
+        "users_username_nonempty": {
+          "name": "users_username_nonempty",
+          "value": "length(\"users\".\"username\") > 0"
+        },
+        "users_role_valid": {
+          "name": "users_role_valid",
+          "value": "\"users\".\"role\" in ('user', 'moderator', 'admin', 'super_admin')"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

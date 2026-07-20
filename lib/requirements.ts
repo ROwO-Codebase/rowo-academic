@@ -16,6 +16,7 @@ import type {
   TriState,
 } from "./types";
 import { requirementNodePresentation } from "./requirement-node-kinds";
+import { requirementNodeKey } from "./requirement-overrides";
 
 const MET: TriState = "MET";
 const NOT_MET: TriState = "NOT_MET";
@@ -30,15 +31,25 @@ export function evaluateRequirementNode(
   context: RequirementEvaluationContext,
   options: RequirementEvaluationOptions = {},
 ): RequirementNodeEvaluation {
+  return evaluateRequirementNodeAtPath(node, context, options, []);
+}
+
+function evaluateRequirementNodeAtPath(
+  node: RequirementNode,
+  context: RequirementEvaluationContext,
+  options: RequirementEvaluationOptions,
+  path: number[],
+): RequirementNodeEvaluation {
   const nodeType = String(node.node_type || "unknown");
   const children = Array.isArray(node.children) ? node.children : [];
+  const evaluateChildren = () => children.map((child, index) =>
+    evaluateRequirementNodeAtPath(child, context, options, [...path, index]));
   const presentation = requirementNodePresentation(node);
   const unresolvedAggregation = node.params?.aggregation_unresolved === true;
   let evaluation: RequirementNodeEvaluation;
 
   if (unresolvedAggregation) {
-    const childEvaluations = children.map((child) =>
-      evaluateRequirementNode(child, context, options));
+    const childEvaluations = evaluateChildren();
     evaluation = result(
       node,
       UNKNOWN,
@@ -47,8 +58,7 @@ export function evaluateRequirementNode(
       ["The aggregate requirement scope needs manual review."],
     );
   } else if (nodeType === "group" || presentation === "structural") {
-    const childEvaluations = children.map((child) =>
-      evaluateRequirementNode(child, context, options));
+    const childEvaluations = evaluateChildren();
     const state = childEvaluations.length === 0
       ? MET
       : aggregateStates(
@@ -59,8 +69,7 @@ export function evaluateRequirementNode(
         );
     evaluation = result(node, state, aggregateReason(state), childEvaluations);
   } else if (presentation === "informational") {
-    const childEvaluations = children.map((child) =>
-      evaluateRequirementNode(child, context, options));
+    const childEvaluations = evaluateChildren();
     const state = childEvaluations.length === 0
       ? MET
       : aggregateStates(
@@ -81,32 +90,72 @@ export function evaluateRequirementNode(
     nodeType === "course_completed" ||
     nodeType === "course_completed_or_enrolled"
   ) {
-    evaluation = evaluatePositiveCourseNode(node, context, options);
+    evaluation = combineKnownNodeChildren(
+      node,
+      evaluatePositiveCourseNode(node, context, options),
+      evaluateChildren(),
+      courseReferences(node).length > 0,
+    );
   } else if (nodeType === "course_pool") {
     evaluation = handlesCoursePoolAggregate(node)
-      ? evaluateCoursePoolAggregate(node, context, options)
-      : evaluatePositiveCourseNode(node, context, options);
+      ? evaluateCoursePoolAggregate(node, context, options, evaluateChildren())
+      : combineKnownNodeChildren(
+          node,
+          evaluatePositiveCourseNode(node, context, options),
+          evaluateChildren(),
+          courseReferences(node).length > 0,
+        );
   } else if (nodeType === "course_forbidden") {
-    evaluation = evaluateForbiddenCourseNode(node, context, options);
+    evaluation = combineKnownNodeChildren(
+      node,
+      evaluateForbiddenCourseNode(node, context, options),
+      evaluateChildren(),
+      courseReferences(node).length > 0,
+    );
   } else if (nodeType === "program_enrolled") {
-    evaluation = evaluateProgramNode(node, context, false);
+    const programEvaluation = evaluateProgramNode(node, context, false);
+    evaluation = combineKnownNodeChildren(
+      node,
+      programEvaluation,
+      evaluateChildren(),
+      referencesOf(node).some((reference) => reference.target_type === "program") ||
+        evaluateHonoursMathematicsProgramRule(node, context) != null,
+    );
   } else if (nodeType === "program_forbidden") {
-    evaluation = evaluateProgramNode(node, context, true);
+    evaluation = combineKnownNodeChildren(
+      node,
+      evaluateProgramNode(node, context, true),
+      evaluateChildren(),
+      referencesOf(node).some((reference) => reference.target_type === "program"),
+    );
   } else if (nodeType === "numeric_constraint" || nodeType === "unit_constraint") {
     const numeric = evaluateNumericConstraints(node, context);
-    evaluation = result(node, numeric.state, numeric.reason);
+    evaluation = combineKnownNodeChildren(
+      node,
+      result(node, numeric.state, numeric.reason),
+      evaluateChildren(),
+      numeric.present,
+    );
   } else {
     const inferredProgramRule = evaluateOpaqueProgramRule(node, context);
-    if (inferredProgramRule) return inferredProgramRule;
-    const childEvaluations = children.map((child) =>
-      evaluateRequirementNode(child, context, options));
-    evaluation = result(
-      node,
-      UNKNOWN,
-      `The ${nodeType} rule needs manual review.`,
-      childEvaluations,
-      [`Unsupported or non-machine rule: ${nodeType}`],
-    );
+    if (inferredProgramRule) {
+      evaluation = combineKnownNodeChildren(
+        node,
+        inferredProgramRule,
+        evaluateChildren(),
+        true,
+      );
+      return applyNodeOverride(evaluation, node, path, options);
+    } else {
+      const childEvaluations = evaluateChildren();
+      evaluation = result(
+        node,
+        UNKNOWN,
+        `The ${nodeType} rule needs manual review.`,
+        childEvaluations,
+        [`Unsupported or non-machine rule: ${nodeType}`],
+      );
+    }
   }
 
   const numericGate = evaluateNumericConstraints(node, context);
@@ -136,8 +185,11 @@ export function evaluateRequirementNode(
     };
   }
 
-  if (isUncertain(node) && evaluation.state === MET) {
-    return {
+  if (
+    isUncertain(node) &&
+    evaluation.state === MET
+  ) {
+    evaluation = {
       ...evaluation,
       state: UNKNOWN,
       provisionalState: evaluation.state,
@@ -149,7 +201,7 @@ export function evaluateRequirementNode(
     };
   }
 
-  return evaluation;
+  return applyNodeOverride(evaluation, node, path, options);
 }
 
 export function evaluateRequirementDocument(
@@ -173,7 +225,17 @@ export function evaluateRequirementDocument(
     };
   }
 
-  const root = evaluateRequirementNode(document.ast.root, context, options);
+  const root = evaluateRequirementNodeAtPath(
+    document.ast.root,
+    context,
+    {
+      ...options,
+      nodeOverrides: options.nodeOverrides?.filter(
+        (override) => override.documentId === document.documentId,
+      ),
+    },
+    [],
+  );
   const computedState = root.state;
   const declaredIncomplete = document.parseStatus !== "parsed" ||
     document.evaluability === "mixed" || document.evaluability === "unknown";
@@ -181,7 +243,11 @@ export function evaluateRequirementDocument(
     (declaredIncomplete &&
       !hasVerifiedPartialGradeSemantics(document) &&
       !hasOnlyNeutralPartialNodes(document));
-  const state = incomplete && computedState === MET ? UNKNOWN : computedState;
+  const state = incomplete &&
+      computedState === MET &&
+      root.manualOverride?.state == null
+    ? UNKNOWN
+    : computedState;
   return {
     documentId: document.documentId,
     ownerType: document.ownerType,
@@ -435,14 +501,13 @@ function evaluateCoursePoolAggregate(
   node: RequirementNode,
   context: RequirementEvaluationContext,
   options: RequirementEvaluationOptions,
+  childEvaluations: RequirementNodeEvaluation[],
 ): RequirementNodeEvaluation {
   const references = courseReferences(node);
   const selectors = selectorList(node.params?.course_selectors);
   const selectorConstraints = selectorConstraintList(
     node.params?.course_selector_constraints,
   );
-  const childEvaluations = (node.children ?? []).map((child) =>
-    evaluateRequirementNode(child, context, options));
   const unknownReasons: string[] = [];
 
   if (node.params?.course_selectors_authoritative === false) {
@@ -1148,6 +1213,52 @@ function referencesOf(node: RequirementNode): RequirementReference[] {
   return [];
 }
 
+function combineKnownNodeChildren(
+  node: RequirementNode,
+  evaluation: RequirementNodeEvaluation,
+  children: RequirementNodeEvaluation[],
+  hasOwnCondition: boolean,
+): RequirementNodeEvaluation {
+  if (children.length === 0) return evaluation;
+
+  const childState = aggregateStates(
+    children.map((child) => child.state),
+    node.logic ?? node.operator ?? "all",
+    numberOrNull(node.min_count),
+    numberOrNull(node.max_count),
+  );
+  const state = hasOwnCondition
+    ? aggregateStates([evaluation.state, childState], "all", null, null)
+    : childState;
+  const childReason = aggregateReason(childState);
+
+  return {
+    ...evaluation,
+    state,
+    automaticState: state,
+    reason: hasOwnCondition
+      ? [evaluation.reason, childReason].filter(Boolean).join(" ")
+      : childReason,
+    matchedCourseCodes: unique([
+      ...evaluation.matchedCourseCodes,
+      ...children.flatMap((child) => child.matchedCourseCodes),
+    ]),
+    unmetCourseCodes: unique([
+      ...(hasOwnCondition ? evaluation.unmetCourseCodes : []),
+      ...children.flatMap((child) => child.unmetCourseCodes),
+    ]),
+    unknownReasons: unique([
+      ...(hasOwnCondition ? evaluation.unknownReasons : []),
+      ...children.flatMap((child) => child.unknownReasons),
+    ]),
+    containsManualOverride: evaluation.containsManualOverride ||
+      children.some((child) => child.containsManualOverride),
+    containsManualStatusOverride: evaluation.containsManualStatusOverride ||
+      children.some((child) => child.containsManualStatusOverride),
+    children,
+  };
+}
+
 function isResolved(reference: RequirementReference): boolean {
   return reference.resolution_status === "resolved" ||
     reference.resolution_status === "code_only";
@@ -1166,6 +1277,7 @@ function result(
 ): RequirementNodeEvaluation {
   return {
     nodeId: stringOrNull(node.node_id),
+    nodeKey: requirementNodeKey(node),
     nodeType: String(node.node_type || "unknown"),
     text: stringOrNull(node.text),
     logic: stringOrNull(node.logic ?? node.operator),
@@ -1174,6 +1286,7 @@ function result(
     references: displayReferences(node),
     presentation: requirementNodePresentation(node),
     state,
+    automaticState: state,
     reason,
     referenceEvaluations: [],
     matchedCourseCodes: unique(children.flatMap((child) => child.matchedCourseCodes)),
@@ -1182,7 +1295,63 @@ function result(
       ...unknownReasons,
       ...children.flatMap((child) => child.unknownReasons),
     ]),
+    containsManualOverride: children.some(
+      (child) => child.containsManualOverride,
+    ),
+    containsManualStatusOverride: children.some(
+      (child) => child.containsManualStatusOverride,
+    ),
     children,
+  };
+}
+
+function applyNodeOverride(
+  evaluation: RequirementNodeEvaluation,
+  node: RequirementNode,
+  path: number[],
+  options: RequirementEvaluationOptions,
+): RequirementNodeEvaluation {
+  const nodeKey = requirementNodeKey(node, path);
+  const manualOverride = options.nodeOverrides?.find(
+    (override) => override.nodeKey === nodeKey,
+  );
+  const automaticState = evaluation.state;
+  const state = manualOverride?.state ?? automaticState;
+  const manualCourseCodes = manualOverride?.references
+    .filter((reference) => reference.targetType === "course")
+    .map((reference) => normalizeCourseCode(reference.targetCode)) ?? [];
+  const containsManualOverride = Boolean(manualOverride) ||
+    evaluation.children.some((child) => child.containsManualOverride);
+  const containsManualStatusOverride = manualOverride?.state != null ||
+    evaluation.children.some((child) => child.containsManualStatusOverride);
+
+  return {
+    ...evaluation,
+    nodeKey,
+    state,
+    automaticState,
+    ...(manualOverride ? { manualOverride } : {}),
+    containsManualOverride,
+    containsManualStatusOverride,
+    reason: manualOverride?.state
+      ? manualOverride.state === MET
+        ? "Manually marked as satisfied."
+        : manualOverride.state === NOT_MET
+          ? "Manually marked as unsatisfied."
+          : "Manually marked as uncertain."
+      : evaluation.reason,
+    matchedCourseCodes:
+      manualOverride?.state === MET
+        ? unique([...evaluation.matchedCourseCodes, ...manualCourseCodes])
+        : evaluation.matchedCourseCodes,
+    unmetCourseCodes:
+      manualOverride?.state === MET ? [] : evaluation.unmetCourseCodes,
+    unknownReasons:
+      manualOverride?.state === MET || manualOverride?.state === NOT_MET
+        ? []
+        : manualOverride?.state === UNKNOWN
+          ? [manualOverride.note || "This node was manually marked as uncertain."]
+          : evaluation.unknownReasons,
   };
 }
 
@@ -1299,6 +1468,7 @@ function formatGrade(value: number): string {
 }
 
 function collectNodeCodes(node: RequirementNodeEvaluation, output: string[]): void {
+  if (node.state === MET) return;
   output.push(...node.unmetCourseCodes);
   for (const child of node.children) collectNodeCodes(child, output);
 }
@@ -1307,6 +1477,7 @@ function collectUnknownReasons(
   node: RequirementNodeEvaluation,
   output: string[],
 ): void {
+  if (node.state !== UNKNOWN) return;
   output.push(...node.unknownReasons);
   for (const child of node.children) collectUnknownReasons(child, output);
 }

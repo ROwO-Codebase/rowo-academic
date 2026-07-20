@@ -2,12 +2,15 @@
 
 import type {
   RequirementDisplayReference,
+  RequirementNodeManualOverride,
+  RequirementNodeManualReference,
   RequirementNodePresentation,
   RequirementReferenceEvaluation,
   TriState,
 } from "@/lib/types";
 import { shouldHighlightRequirementSubconditions } from "@/lib/requirement-highlights";
 import { requirementNodePresentation } from "@/lib/requirement-node-kinds";
+import { requirementNodeKey } from "@/lib/requirement-overrides";
 import {
   resolveRequirementReferenceAnchor,
   resolveTrackedProgramReferenceAnchor,
@@ -18,6 +21,7 @@ import type { MouseEvent } from "react";
 
 export interface RequirementTreeNodeData {
   nodeId: string | null;
+  nodeKey?: string;
   nodeType: string;
   text: string | null;
   logic: string | null;
@@ -27,8 +31,18 @@ export interface RequirementTreeNodeData {
   references: RequirementDisplayReference[];
   children: RequirementTreeNodeData[];
   state?: TriState;
+  automaticState?: TriState;
   reason?: string;
   referenceEvaluations?: RequirementReferenceEvaluation[];
+  manualOverride?: RequirementNodeManualOverride;
+  containsManualOverride?: boolean;
+  containsManualStatusOverride?: boolean;
+}
+
+export interface RequirementOverrideTarget {
+  nodeKey: string;
+  node: RequirementTreeNodeData;
+  isRoot: boolean;
 }
 
 const stateMeta: Record<TriState, { label: string; symbol: string }> = {
@@ -44,6 +58,7 @@ export function RequirementTree({
   trackedProgramAnchors,
   documentId,
   showCourseActivity = false,
+  onOverrideNode,
 }: {
   root: RequirementTreeNodeData;
   evaluation?: RequirementTreeNodeData | null;
@@ -51,17 +66,22 @@ export function RequirementTree({
   trackedProgramAnchors?: TrackedProgramAnchorRegistry;
   documentId?: string;
   showCourseActivity?: boolean;
+  onOverrideNode?: (target: RequirementOverrideTarget) => void;
 }) {
   const evaluations = new Map<string, RequirementTreeNodeData>();
-  if (evaluation) collectEvaluations(evaluation, evaluations);
+  if (evaluation) collectEvaluations(evaluation, evaluations, []);
+  const evaluatedRoot = findNodeEvaluation(root, evaluations, []);
+  const rootManualOverride = (evaluatedRoot ?? root).manualOverride;
   const documentAnchorId = documentId
     ? anchorRegistry?.documentAnchors.get(documentId)
     : undefined;
   return (
     <div
-      className={documentAnchorId
-        ? "requirement-tree requirement-anchor-target"
-        : "requirement-tree"}
+      className={[
+        "requirement-tree",
+        documentAnchorId && "requirement-anchor-target",
+        rootManualOverride && "is-manually-overridden",
+      ].filter(Boolean).join(" ")}
       id={documentAnchorId}
       tabIndex={documentAnchorId ? -1 : undefined}
     >
@@ -71,8 +91,10 @@ export function RequirementTree({
         anchorRegistry={anchorRegistry}
         trackedProgramAnchors={trackedProgramAnchors}
         showCourseActivity={showCourseActivity}
+        onOverrideNode={onOverrideNode}
         highlighted
         isRoot
+        path={[]}
       />
     </div>
   );
@@ -84,7 +106,9 @@ function RequirementTreeNode({
   anchorRegistry,
   trackedProgramAnchors,
   showCourseActivity,
+  onOverrideNode,
   highlighted,
+  path,
   isRoot = false,
 }: {
   node: RequirementTreeNodeData;
@@ -92,10 +116,13 @@ function RequirementTreeNode({
   anchorRegistry?: RequirementAnchorRegistry;
   trackedProgramAnchors?: TrackedProgramAnchorRegistry;
   showCourseActivity: boolean;
+  onOverrideNode?: (target: RequirementOverrideTarget) => void;
   highlighted: boolean;
+  path: number[];
   isRoot?: boolean;
 }) {
-  const evaluated = node.nodeId ? evaluations.get(node.nodeId) : undefined;
+  const evaluated = findNodeEvaluation(node, evaluations, path);
+  const effectiveNode = evaluated ?? node;
   const state = evaluated?.state ?? node.state;
   const presentation = evaluated?.presentation ?? node.presentation ??
     requirementNodePresentation({
@@ -103,41 +130,77 @@ function RequirementTreeNode({
       params: {},
       refs: [],
     });
-  const showState = !isRoot && presentation === "condition" && highlighted &&
-    state !== undefined;
+  const manualOverride = effectiveNode.manualOverride;
+  const editable = Boolean(onOverrideNode);
+  const showState = !isRoot && presentation === "condition" &&
+    (highlighted || editable || Boolean(manualOverride)) && state !== undefined;
   const showInformation = !isRoot && presentation === "informational";
   const highlightDescendants = shouldHighlightRequirementSubconditions(
     state,
     highlighted,
   );
   const text = displayNodeText(node, presentation);
+  const nodeLabel = text || fallbackNodeLabel(node, presentation, isRoot);
+  const stableNodeKey = effectiveNode.nodeKey?.trim() ||
+    requirementNodeKey(effectiveNode, path);
+  const nodeIcon = nodeIconMeta(presentation, state);
+  const showNodeIcon = !isRoot && (editable || showState || showInformation);
+  const showHeading = !isRoot && (Boolean(text) || editable || Boolean(manualOverride));
   const nodeAnchorId = node.nodeId
     ? anchorRegistry?.nodeAnchors.get(node.nodeId)
     : undefined;
   const content = (
     <>
-      {!isRoot && text && (
-        <div className="requirement-node-heading">
-          {showInformation && (
-            <span
-              className="requirement-node-state state-info"
-              title="Information"
-              aria-label="Information"
-            >
-              i
-            </span>
-          )}
-          {showState && (
-            <span
-              className={"requirement-node-state state-" + state.toLowerCase()}
-              title={evaluated?.reason ?? node.reason ?? stateMeta[state].label}
-              aria-label={stateMeta[state].label}
-            >
-              {stateMeta[state].symbol}
-            </span>
-          )}
-          <RequirementNodeText node={node} text={text} />
+      {isRoot && manualOverride && (
+        <div className="requirement-root-manual-marker">
+          <span className="requirement-manual-badge">Manual</span>
         </div>
+      )}
+      {showHeading && (
+        <div className="requirement-node-heading">
+          {showNodeIcon && (editable ? (
+            <button
+              className={[
+                "requirement-node-state",
+                "requirement-node-override-button",
+                nodeIcon.className,
+                manualOverride && "is-overridden",
+              ].filter(Boolean).join(" ")}
+              type="button"
+              title={effectiveNode.reason ?? nodeIcon.label}
+              aria-label={overrideButtonLabel(nodeLabel, nodeIcon.label, Boolean(manualOverride))}
+              aria-haspopup="dialog"
+              onClick={() => onOverrideNode?.({
+                nodeKey: stableNodeKey,
+                node: effectiveNode,
+                isRoot,
+              })}
+            >
+              {nodeIcon.symbol}
+            </button>
+          ) : (
+            <span
+              className={"requirement-node-state " + nodeIcon.className}
+              title={showInformation
+                ? "Information"
+                : evaluated?.reason ?? node.reason ?? nodeIcon.label}
+              aria-label={nodeIcon.label}
+            >
+              {nodeIcon.symbol}
+            </span>
+          ))}
+          <RequirementNodeText node={node} text={nodeLabel} />
+          {manualOverride && (
+            <span className="requirement-manual-badge">Manual</span>
+          )}
+        </div>
+      )}
+      {manualOverride && (
+        <ManualOverrideDetails
+          override={manualOverride}
+          anchorRegistry={anchorRegistry}
+          trackedProgramAnchors={trackedProgramAnchors}
+        />
       )}
       {node.references.length > 0 && (
         <ul className="requirement-reference-list">
@@ -159,7 +222,38 @@ function RequirementTreeNode({
                   : undefined}
               >
                 <div className="requirement-reference-row">
-                  {referenceEvaluation && (
+                  {referenceEvaluation && (editable ? (
+                    <button
+                      className={[
+                        "requirement-node-state",
+                        "requirement-reference-state",
+                        "requirement-node-override-button",
+                        "state-" + (courseActivity
+                          ? "course-activity"
+                          : referenceEvaluation.state.toLowerCase()),
+                        manualOverride && "is-overridden",
+                      ].filter(Boolean).join(" ")}
+                      type="button"
+                      title={referenceEvaluation.reason}
+                      aria-label={overrideButtonLabel(
+                        nodeLabel,
+                        courseActivity
+                          ? courseActivity === "in_progress"
+                            ? "Course in progress"
+                            : "Course planned"
+                          : stateMeta[referenceEvaluation.state].label,
+                        Boolean(manualOverride),
+                      )}
+                      aria-haspopup="dialog"
+                      onClick={() => onOverrideNode?.({
+                        nodeKey: stableNodeKey,
+                        node: effectiveNode,
+                        isRoot,
+                      })}
+                    >
+                      {courseActivity ? "✎" : stateMeta[referenceEvaluation.state].symbol}
+                    </button>
+                  ) : (
                     <span
                       className={
                         "requirement-node-state requirement-reference-state state-" +
@@ -174,7 +268,7 @@ function RequirementTreeNode({
                     >
                       {courseActivity ? "✎" : stateMeta[referenceEvaluation.state].symbol}
                     </span>
-                  )}
+                  ))}
                   <RequirementReferenceLink
                     reference={reference}
                     anchorRegistry={anchorRegistry}
@@ -201,7 +295,9 @@ function RequirementTreeNode({
                 anchorRegistry={anchorRegistry}
                 trackedProgramAnchors={trackedProgramAnchors}
                 showCourseActivity={showCourseActivity}
+                onOverrideNode={onOverrideNode}
                 highlighted={highlightDescendants}
+                path={[...path, index]}
               />
             </li>
           ))}
@@ -214,15 +310,56 @@ function RequirementTreeNode({
     ? content
     : (
       <div
-        className={nodeAnchorId
-          ? "requirement-tree-node requirement-anchor-target"
-          : "requirement-tree-node"}
+        className={[
+          "requirement-tree-node",
+          nodeAnchorId && "requirement-anchor-target",
+          manualOverride && "is-manually-overridden",
+        ].filter(Boolean).join(" ")}
         id={nodeAnchorId}
         tabIndex={nodeAnchorId ? -1 : undefined}
       >
         {content}
       </div>
     );
+}
+
+function ManualOverrideDetails({
+  override,
+  anchorRegistry,
+  trackedProgramAnchors,
+}: {
+  override: RequirementNodeManualOverride;
+  anchorRegistry?: RequirementAnchorRegistry;
+  trackedProgramAnchors?: TrackedProgramAnchorRegistry;
+}) {
+  if (!override.note && override.references.length === 0) return null;
+
+  return (
+    <div className="requirement-manual-details">
+      {override.note && (
+        <p className="requirement-manual-note">
+          <strong>Note</strong>
+          <span>{override.note}</span>
+        </p>
+      )}
+      {override.references.length > 0 && (
+        <div className="requirement-manual-references">
+          <span className="requirement-manual-section-label">Added references</span>
+          <ul className="requirement-reference-list requirement-manual-reference-list">
+            {override.references.map((reference) => (
+              <li key={"manual:" + reference.id}>
+                <RequirementReferenceLink
+                  reference={manualReferenceDisplay(reference)}
+                  anchorRegistry={anchorRegistry}
+                  trackedProgramAnchors={trackedProgramAnchors}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RequirementNodeText({
@@ -371,6 +508,54 @@ function displayNodeText(
   return "Requirement:";
 }
 
+function fallbackNodeLabel(
+  node: RequirementTreeNodeData,
+  presentation: RequirementNodePresentation,
+  isRoot: boolean,
+): string {
+  if (isRoot) return "Overall requirement";
+  if (presentation === "structural") {
+    if (node.logic === "all") return "Requirement group: complete all";
+    if (node.logic === "any") return "Requirement group: complete at least one";
+    if (node.logic === "at_least" && node.minCount != null) {
+      return `Requirement group: complete at least ${node.minCount}`;
+    }
+    return "Requirement group";
+  }
+  if (presentation === "informational") return "Requirement information";
+  return node.nodeType
+    .replace(/[_-]+/g, " ")
+    .replace(/^\w/, (letter) => letter.toUpperCase()) || "Requirement";
+}
+
+function nodeIconMeta(
+  presentation: RequirementNodePresentation,
+  state: TriState | undefined,
+): { label: string; symbol: string; className: string } {
+  if (presentation === "informational") {
+    return { label: "Information", symbol: "i", className: "state-info" };
+  }
+  if (state) {
+    return {
+      ...stateMeta[state],
+      className: "state-" + state.toLowerCase(),
+    };
+  }
+  return { label: "Edit", symbol: "✎", className: "state-editable" };
+}
+
+function overrideButtonLabel(
+  nodeLabel: string,
+  statusLabel: string,
+  manuallyOverridden: boolean,
+): string {
+  return [
+    `Edit override for ${nodeLabel.replace(/:\s*$/, "")}.`,
+    `Current status: ${statusLabel}.`,
+    manuallyOverridden ? "Manual override applied." : "",
+  ].filter(Boolean).join(" ");
+}
+
 function inferredProgramHref(node: RequirementTreeNodeData): string | null {
   if (node.references.length > 0 || !node.text) {
     return null;
@@ -392,9 +577,31 @@ function inferredProgramHref(node: RequirementTreeNodeData): string | null {
 function collectEvaluations(
   node: RequirementTreeNodeData,
   output: Map<string, RequirementTreeNodeData>,
+  path: number[],
 ) {
-  if (node.nodeId) output.set(node.nodeId, node);
-  for (const child of node.children) collectEvaluations(child, output);
+  output.set("key:" + stableRequirementNodeKey(node, path), node);
+  output.set("path:" + path.join("."), node);
+  if (node.nodeId) output.set("id:" + node.nodeId, node);
+  for (const [index, child] of node.children.entries()) {
+    collectEvaluations(child, output, [...path, index]);
+  }
+}
+
+function findNodeEvaluation(
+  node: RequirementTreeNodeData,
+  evaluations: Map<string, RequirementTreeNodeData>,
+  path: number[],
+): RequirementTreeNodeData | undefined {
+  return evaluations.get("key:" + stableRequirementNodeKey(node, path)) ??
+    (node.nodeId ? evaluations.get("id:" + node.nodeId) : undefined) ??
+    evaluations.get("path:" + path.join("."));
+}
+
+function stableRequirementNodeKey(
+  node: RequirementTreeNodeData,
+  path: number[],
+): string {
+  return node.nodeKey?.trim() || requirementNodeKey(node, path);
 }
 
 function referenceKey(reference: RequirementDisplayReference, index: number) {
@@ -417,4 +624,18 @@ function findReferenceEvaluation(
     Boolean(reference.targetCode && evaluation.targetCode === reference.targetCode) ||
     (reference.ordinal != null && evaluation.ordinal === reference.ordinal)) ??
     evaluations[index];
+}
+
+function manualReferenceDisplay(
+  reference: RequirementNodeManualReference,
+): RequirementDisplayReference {
+  return {
+    ordinal: null,
+    targetType: reference.targetType,
+    targetPid: reference.targetPid,
+    targetCode: reference.targetCode,
+    targetTitle: reference.targetTitle,
+    credits: reference.credits,
+    resolutionStatus: reference.resolutionStatus,
+  };
 }

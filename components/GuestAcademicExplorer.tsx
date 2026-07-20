@@ -17,6 +17,7 @@ import { isNonAcademicCourseCode } from "@/lib/course-records";
 import { buildRequirementAnchorRegistry } from "@/lib/requirement-anchors";
 import { isCourseRequirementSection } from "@/lib/requirement-sections";
 import {
+  redditCourseSearchUrl,
   uwflowCourseUrl,
   waterlooCourseOutlineUrl,
 } from "@/lib/course-links";
@@ -913,7 +914,23 @@ function CourseExplorer({
                   target="_blank"
                   rel="noreferrer"
                 >
+                  <span
+                    className="external-course-link-icon uwflow"
+                    aria-hidden="true"
+                  />
                   View on UWFlow
+                </a>
+                <a
+                  className="button button-secondary button-compact"
+                  href={redditCourseSearchUrl(detail.course.code)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <span
+                    className="external-course-link-icon reddit"
+                    aria-hidden="true"
+                  />
+                  Search on Reddit
                 </a>
                 <a
                   className="button button-secondary button-compact"

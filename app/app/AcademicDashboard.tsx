@@ -17,6 +17,7 @@ import {
 } from "@/lib/course-records";
 import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
 import { isCourseRequirementSection } from "@/lib/requirement-sections";
+import { requirementNodeKey } from "@/lib/requirement-overrides";
 import {
   buildRequirementAnchorRegistry,
   buildTrackedProgramAnchorRegistry,
@@ -30,8 +31,13 @@ import {
 } from "../../components/GuestAcademicExplorer";
 import {
   RequirementTree,
+  type RequirementOverrideTarget,
   type RequirementTreeNodeData,
 } from "../../components/RequirementTree";
+import type {
+  RequirementNodeManualReference,
+  TriState,
+} from "@/lib/types";
 
 type TabId = "overview" | "progress" | "planner" | "catalog";
 type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
@@ -179,6 +185,7 @@ interface ApiCatalogMetadata {
 interface ApiCatalogProgram {
   catalogId: string;
   pid: string;
+  versionId?: string;
   code: string;
   title: string;
   faculty?: string | null;
@@ -190,6 +197,7 @@ interface ApiCatalogProgram {
 
 interface ApiCatalogCourse {
   pid: string;
+  versionId?: string;
   code: string;
   title: string;
   credits?: number | null;
@@ -290,6 +298,21 @@ interface ApiCourseMutationPayload {
     unmetCourseCodes: string[];
     unknownReasons: string[];
   } | null;
+}
+
+interface RequirementOverrideEditorTarget extends RequirementOverrideTarget {
+  programId: string;
+  documentId: string;
+  requirementTitle: string;
+}
+
+interface RequirementOverrideSaveInput {
+  state: TriState | null;
+  note: string | null;
+  references: Array<{
+    targetType: "course" | "program";
+    targetPid: string;
+  }>;
 }
 
 interface ApiPlannerEligibilityResult {
@@ -1403,6 +1426,418 @@ function EditCourseDialog({
   );
 }
 
+interface OverrideReferenceCandidate {
+  targetType: "course" | "program";
+  targetPid: string;
+  targetVersionId: string;
+  targetCode: string;
+  targetTitle: string;
+  credits: number | null;
+}
+
+const overrideStateLabels: Record<TriState, string> = {
+  MET: "Satisfied",
+  NOT_MET: "Unsatisfied",
+  UNKNOWN: "Uncertain",
+};
+
+function overrideNodeLabel(node: RequirementTreeNodeData): string {
+  if (node.text?.trim()) return node.text.trim().replace(/:\s*$/, "");
+  return node.nodeType
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function RequirementOverrideDialog({
+  target,
+  saving,
+  onClose,
+  onSave,
+  onRevert,
+}: {
+  target: RequirementOverrideEditorTarget;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (input: RequirementOverrideSaveInput) => Promise<void>;
+  onRevert: () => Promise<void>;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const existing = target.node.manualOverride;
+  const [state, setState] = useState<TriState | "AUTO">(
+    existing?.state ?? "AUTO",
+  );
+  const [note, setNote] = useState(existing?.note ?? "");
+  const [references, setReferences] = useState<
+    RequirementNodeManualReference[]
+  >(existing?.references ?? []);
+  const [referenceType, setReferenceType] = useState<"course" | "program">(
+    "course",
+  );
+  const [referenceQuery, setReferenceQuery] = useState("");
+  const [referenceResults, setReferenceResults] = useState<
+    OverrideReferenceCandidate[]
+  >([]);
+  const [referenceSearchState, setReferenceSearchState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    const query = referenceQuery.trim();
+    if (query.length < 2) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        if (referenceType === "course") {
+          const payload = await requestJson<CourseSearchPayload>(
+            "/api/catalog/courses?q=" + encodeURIComponent(query) + "&limit=8",
+            { signal: controller.signal },
+          );
+          const courses = payload.courses ?? payload.items ?? [];
+          setReferenceResults(courses.map((course) => ({
+            targetType: "course",
+            targetPid: course.pid,
+            targetVersionId: "versionId" in course
+              ? course.versionId ?? ""
+              : "",
+            targetCode: course.code,
+            targetTitle: course.title,
+            credits: course.credits ??
+              ("creditMin" in course ? course.creditMin ?? null : null),
+          })));
+        } else {
+          const payload = await requestJson<ProgramSearchPayload>(
+            "/api/catalog/programs?q=" + encodeURIComponent(query) + "&limit=8",
+            { signal: controller.signal },
+          );
+          const programs = payload.programs ?? payload.items ?? [];
+          setReferenceResults(programs.map((program) => ({
+            targetType: "program",
+            targetPid: program.pid,
+            targetVersionId: "versionId" in program
+              ? program.versionId ?? ""
+              : "",
+            targetCode: program.code,
+            targetTitle: program.title,
+            credits: null,
+          })));
+        }
+        setReferenceSearchState("ready");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setReferenceResults([]);
+        setReferenceSearchState("error");
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [referenceQuery, referenceType]);
+
+  function addReference(candidate: OverrideReferenceCandidate) {
+    if (
+      references.some(
+        (reference) =>
+          reference.targetType === candidate.targetType &&
+          reference.targetPid === candidate.targetPid,
+      )
+    ) {
+      setFormError("That reference is already attached to this node.");
+      return;
+    }
+    setReferences((current) => [
+      ...current,
+      {
+        id: "pending:" + candidate.targetType + ":" + candidate.targetPid,
+        ...candidate,
+        resolutionStatus: "resolved",
+      },
+    ]);
+    setReferenceQuery("");
+    setReferenceResults([]);
+    setReferenceSearchState("idle");
+    setFormError("");
+  }
+
+  async function saveOverride(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanNote = note.trim();
+    if (state === "AUTO" && !cleanNote && references.length === 0) {
+      if (existing) {
+        setFormError("");
+        try {
+          await onRevert();
+        } catch (error) {
+          setFormError(
+            error instanceof Error
+              ? error.message
+              : "The override could not be reverted.",
+          );
+        }
+        return;
+      }
+      setFormError(
+        "Choose a manual status, add a reference, or enter a note before saving.",
+      );
+      return;
+    }
+    setFormError("");
+    try {
+      await onSave({
+        state: state === "AUTO" ? null : state,
+        note: cleanNote || null,
+        references: references.map((reference) => ({
+          targetType: reference.targetType,
+          targetPid: reference.targetPid,
+        })),
+      });
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "The override could not be saved.",
+      );
+    }
+  }
+
+  async function revertOverride() {
+    if (!existing) return;
+    if (!window.confirm("Revert this manual edit and restore automatic evaluation?")) {
+      return;
+    }
+    setFormError("");
+    try {
+      await onRevert();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "The override could not be reverted.",
+      );
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="requirement-override-dialog"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onClose();
+      }}
+    >
+      <form className="requirement-override-form" onSubmit={saveOverride}>
+        <div className="course-edit-header">
+          <div>
+            <span>Manual requirement edit</span>
+            <h2 id={titleId}>{overrideNodeLabel(target.node)}</h2>
+            <small>{target.requirementTitle}</small>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close override dialog"
+            disabled={saving}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="requirement-override-body">
+          <section className="override-section" aria-labelledby={titleId + "-status"}>
+            <div className="override-section-heading">
+              <div>
+                <h3 id={titleId + "-status"}>Status</h3>
+                <p>
+                  Automatic result: {overrideStateLabels[
+                    target.node.automaticState ?? target.node.state ?? "UNKNOWN"
+                  ]}
+                </p>
+              </div>
+            </div>
+            <div className="override-status-options">
+              {([
+                ["AUTO", "Automatic", "Follow course and child-node evidence"],
+                ["MET", "Satisfied", "Count this node as complete"],
+                ["NOT_MET", "Unsatisfied", "Count this node as incomplete"],
+                ["UNKNOWN", "Uncertain", "Keep this node in needs review"],
+              ] as const).map(([value, label, description]) => (
+                <label key={value} className={state === value ? "selected" : ""}>
+                  <input
+                    type="radio"
+                    name="override-state"
+                    value={value}
+                    checked={state === value}
+                    disabled={saving}
+                    onChange={() => setState(value)}
+                  />
+                  <span>
+                    <strong>{label}</strong>
+                    <small>{description}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="override-section" aria-labelledby={titleId + "-references"}>
+            <div className="override-section-heading">
+              <div>
+                <h3 id={titleId + "-references"}>Course or plan references</h3>
+                <p>References document the edit; only the status changes progress.</p>
+              </div>
+            </div>
+            {references.length > 0 && (
+              <ul className="override-reference-selection">
+                {references.map((reference) => (
+                  <li key={reference.targetType + ":" + reference.targetPid}>
+                    <span>
+                      <strong>{reference.targetCode}</strong>
+                      {" · " + reference.targetTitle}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setReferences((current) =>
+                        current.filter((item) => item !== reference))}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="override-reference-search">
+              <select
+                aria-label="Reference type"
+                value={referenceType}
+                disabled={saving}
+                onChange={(event) => {
+                  setReferenceType(event.target.value as "course" | "program");
+                  setReferenceResults([]);
+                  setReferenceSearchState(
+                    referenceQuery.trim().length >= 2 ? "loading" : "idle",
+                  );
+                }}
+              >
+                <option value="course">Course</option>
+                <option value="program">Plan</option>
+              </select>
+              <input
+                type="search"
+                value={referenceQuery}
+                disabled={saving}
+                onChange={(event) => {
+                  const nextQuery = event.target.value;
+                  setReferenceQuery(nextQuery);
+                  setReferenceResults([]);
+                  setReferenceSearchState(
+                    nextQuery.trim().length >= 2 ? "loading" : "idle",
+                  );
+                }}
+                placeholder={referenceType === "course"
+                  ? "Search CS 246 or algorithms"
+                  : "Search a plan"}
+                aria-label={referenceType === "course"
+                  ? "Search course references"
+                  : "Search plan references"}
+              />
+              {referenceSearchState === "loading" && (
+                <span className="spinner" aria-label="Searching" />
+              )}
+            </div>
+            {referenceSearchState === "error" && (
+              <p className="form-error">References could not be searched.</p>
+            )}
+            {referenceSearchState === "ready" && (
+              <div
+                className="override-reference-results"
+                aria-live="polite"
+              >
+                {referenceResults.length === 0 ? (
+                  <p>No matching references.</p>
+                ) : referenceResults.map((candidate) => (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    key={candidate.targetType + ":" + candidate.targetPid}
+                    onClick={() => addReference(candidate)}
+                  >
+                    <strong>{candidate.targetCode}</strong>
+                    <span>{candidate.targetTitle}</span>
+                    <small>Add</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="override-section" aria-labelledby={titleId + "-note"}>
+            <div className="override-section-heading">
+              <div>
+                <h3 id={titleId + "-note"}>Note</h3>
+                <p>Add context for yourself or an academic-advisor review.</p>
+              </div>
+              {note && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setNote("")}
+                >
+                  Remove note
+                </button>
+              )}
+            </div>
+            <textarea
+              value={note}
+              maxLength={4000}
+              rows={4}
+              aria-labelledby={titleId + "-note"}
+              disabled={saving}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Why are you overriding or annotating this requirement?"
+            />
+          </section>
+
+          {formError && <p className="form-error" role="alert">{formError}</p>}
+          <div className="form-actions override-form-actions">
+            {existing && (
+              <button
+                className="button button-danger-outline"
+                type="button"
+                disabled={saving}
+                onClick={() => void revertOverride()}
+              >
+                Revert manual edit
+              </button>
+            )}
+            <span />
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button className="button button-primary" type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save manual edit"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
 function OverviewPanel({
   dashboard,
   onOpenCatalog,
@@ -1742,27 +2177,71 @@ function OverviewPanel({
 
 function RequirementCard({
   requirement,
+  programId,
   anchorRegistry,
   trackedProgramAnchors,
+  onOverrideNode,
 }: {
   requirement: DashboardRequirement;
+  programId: string;
   anchorRegistry: RequirementAnchorRegistry;
   trackedProgramAnchors: TrackedProgramAnchorRegistry;
+  onOverrideNode: (target: RequirementOverrideEditorTarget) => void;
 }) {
   const meta = requirementMeta[requirement.status];
+  const root = requirement.root;
+  const rootHasManualEdit = root?.containsManualOverride === true;
+  const rootIsManuallyEdited = Boolean(root?.manualOverride);
+
+  function openOverride(target: RequirementOverrideTarget) {
+    onOverrideNode({
+      ...target,
+      programId,
+      documentId: requirement.id,
+      requirementTitle: requirement.title,
+    });
+  }
 
   return (
-    <article className={"requirement-card requirement-" + requirement.status}>
+    <article className={classNames(
+      "requirement-card requirement-" + requirement.status,
+      rootHasManualEdit && "has-manual-overrides",
+    )}>
       <div className="requirement-card-top">
-        <span
-          className={"requirement-symbol " + requirement.status}
-          aria-hidden="true"
-        >
-          {meta.symbol}
-        </span>
+        {root ? (
+          <button
+            className={classNames(
+              "requirement-symbol requirement-override-root-trigger",
+              requirement.status,
+              rootIsManuallyEdited && "is-manually-overridden",
+            )}
+            type="button"
+            aria-label={"Override " + requirement.title + " root status"}
+            aria-haspopup="dialog"
+            onClick={() => openOverride({
+              nodeKey: root.nodeKey || requirementNodeKey(
+                { nodeId: root.nodeId },
+              ),
+              node: root,
+              isRoot: true,
+            })}
+          >
+            {meta.symbol}
+          </button>
+        ) : (
+          <span
+            className={"requirement-symbol " + requirement.status}
+            aria-hidden="true"
+          >
+            {meta.symbol}
+          </span>
+        )}
         <div className="requirement-title">
           <h3>{requirement.title}</h3>
           {requirement.description && <p>{requirement.description}</p>}
+          {rootHasManualEdit && (
+            <span className="requirement-manual-summary">Manual edits applied</span>
+          )}
         </div>
         <span className={"requirement-state " + requirement.status}>
           {meta.label}
@@ -1773,14 +2252,15 @@ function RequirementCard({
         <p className="requirement-note">{requirement.note}</p>
       )}
 
-      {requirement.root && (
+      {root && (
         <div className="requirement-ast">
           <RequirementTree
-            root={requirement.root}
+            root={root}
             documentId={requirement.id}
             anchorRegistry={anchorRegistry}
             trackedProgramAnchors={trackedProgramAnchors}
             showCourseActivity
+            onOverrideNode={openOverride}
           />
         </div>
       )}
@@ -1827,6 +2307,10 @@ function ProgressPanel({
 }) {
   const [filter, setFilter] = useState<"all" | "attention">("all");
   const [busyProgramId, setBusyProgramId] = useState<string | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<
+    RequirementOverrideEditorTarget | null
+  >(null);
+  const [savingOverride, setSavingOverride] = useState(false);
   const [collapsedProgramIds, setCollapsedProgramIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1875,6 +2359,44 @@ function ProgressPanel({
       setNotice(error instanceof Error ? error.message : "The plan could not be removed.");
     } finally {
       setBusyProgramId(null);
+    }
+  }
+
+  async function saveRequirementOverride(input: RequirementOverrideSaveInput) {
+    if (!overrideTarget) return;
+    setSavingOverride(true);
+    try {
+      await requestJson<{ success: true }>("/api/progress/overrides", {
+        method: "PUT",
+        body: JSON.stringify({
+          userProgramId: overrideTarget.programId,
+          documentId: overrideTarget.documentId,
+          nodeKey: overrideTarget.nodeKey,
+          ...input,
+        }),
+      });
+      await onReload();
+      setNotice("Manual requirement edit saved.");
+      setOverrideTarget(null);
+    } finally {
+      setSavingOverride(false);
+    }
+  }
+
+  async function revertRequirementOverride() {
+    const overrideId = overrideTarget?.node.manualOverride?.id;
+    if (!overrideId) return;
+    setSavingOverride(true);
+    try {
+      await requestJson<{ success: true }>(
+        "/api/progress/overrides/" + encodeURIComponent(overrideId),
+        { method: "DELETE" },
+      );
+      await onReload();
+      setNotice("Automatic requirement evaluation restored.");
+      setOverrideTarget(null);
+    } finally {
+      setSavingOverride(false);
     }
   }
 
@@ -2022,8 +2544,10 @@ function ProgressPanel({
                       <RequirementCard
                         key={program.profile.id + "-" + requirement.id}
                         requirement={requirement}
+                        programId={program.profile.id}
                         anchorRegistry={anchorRegistry}
                         trackedProgramAnchors={trackedProgramAnchors}
+                        onOverrideNode={setOverrideTarget}
                       />
                     ))}
                   </div>
@@ -2041,6 +2565,25 @@ function ProgressPanel({
           partially parsed rules are never treated as satisfied.
         </p>
       </aside>
+
+      {overrideTarget && (
+        <RequirementOverrideDialog
+          key={
+            overrideTarget.programId +
+            ":" +
+            overrideTarget.documentId +
+            ":" +
+            overrideTarget.nodeKey
+          }
+          target={overrideTarget}
+          saving={savingOverride}
+          onClose={() => {
+            if (!savingOverride) setOverrideTarget(null);
+          }}
+          onSave={saveRequirementOverride}
+          onRevert={revertRequirementOverride}
+        />
+      )}
     </div>
   );
 }

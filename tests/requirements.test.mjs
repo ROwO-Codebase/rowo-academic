@@ -11,6 +11,10 @@ const nodeKindsSource = await readFile(
   new URL("../lib/requirement-node-kinds.ts", import.meta.url),
   "utf8",
 );
+const overrideKeysSource = await readFile(
+  new URL("../lib/requirement-overrides.ts", import.meta.url),
+  "utf8",
+);
 const nodeKindsJavascript = ts.transpileModule(nodeKindsSource, {
   compilerOptions: {
     module: ts.ModuleKind.ESNext,
@@ -19,12 +23,22 @@ const nodeKindsJavascript = ts.transpileModule(nodeKindsSource, {
 }).outputText;
 const nodeKindsUrl =
   `data:text/javascript;base64,${Buffer.from(nodeKindsJavascript).toString("base64")}`;
+const overrideKeysJavascript = ts.transpileModule(overrideKeysSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.ESNext,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText;
+const overrideKeysUrl =
+  `data:text/javascript;base64,${Buffer.from(overrideKeysJavascript).toString("base64")}`;
 const javascript = ts.transpileModule(source, {
   compilerOptions: {
     module: ts.ModuleKind.ESNext,
     target: ts.ScriptTarget.ES2022,
   },
-}).outputText.replace("./requirement-node-kinds", nodeKindsUrl);
+}).outputText
+  .replace("./requirement-node-kinds", nodeKindsUrl)
+  .replace("./requirement-overrides", overrideKeysUrl);
 const requirements = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
 );
@@ -165,6 +179,257 @@ test("planner eligibility can count a planned prerequisite", () => {
 
   assert.equal(result.state, "MET");
   assert.equal(result.eligible, true);
+});
+
+test("manual child states propagate through automatic parent logic", () => {
+  const root = node("root", {
+    node_id: "root-node",
+    logic: "all",
+    children: [
+      node("course_completed", {
+        node_id: "completed-child",
+        refs: [reference("CS135")],
+      }),
+      node("course_completed", {
+        node_id: "manual-child",
+        refs: [reference("MATH135")],
+      }),
+    ],
+  });
+  const analysis = evaluateRequirementDocuments(
+    [document(root)],
+    context([
+      { coursePid: "cs135-pid", courseCode: "CS135", status: "completed" },
+    ]),
+    {
+      nodeOverrides: [{
+        id: "override-1",
+        documentId: "document-1",
+        nodeKey: "index:1",
+        state: "MET",
+        note: "Advisor confirmed equivalent credit.",
+        references: [{
+          id: "reference-1",
+          targetType: "course",
+          targetPid: "math135-pid",
+          targetVersionId: "math135-version",
+          targetCode: "MATH135",
+          targetTitle: "Algebra for Honours Mathematics",
+          credits: 0.5,
+          resolutionStatus: "resolved",
+        }],
+        updatedAt: 1,
+      }],
+    },
+  );
+
+  const manualChild = analysis.documents[0].root.children[1];
+  assert.equal(manualChild.automaticState, "NOT_MET");
+  assert.equal(manualChild.state, "MET");
+  assert.equal(manualChild.manualOverride.note, "Advisor confirmed equivalent credit.");
+  assert.equal(analysis.documents[0].root.state, "MET");
+  assert.equal(analysis.documents[0].root.manualOverride, undefined);
+  assert.equal(analysis.documents[0].root.containsManualOverride, true);
+  assert.deepEqual(collectUnmetCourseCodes(analysis), []);
+});
+
+test("a manual parent status wins over final child states", () => {
+  const root = node("root", {
+    node_id: "manual-root",
+    logic: "all",
+    children: [
+      node("course_completed", {
+        node_id: "met-child",
+        refs: [reference("CS135")],
+      }),
+    ],
+  });
+  const analysis = evaluateRequirementDocuments(
+    [document(root)],
+    context([
+      { coursePid: "cs135-pid", courseCode: "CS135", status: "completed" },
+    ]),
+    {
+      nodeOverrides: [{
+        id: "override-root",
+        documentId: "document-1",
+        nodeKey: "index:root",
+        state: "NOT_MET",
+        note: null,
+        references: [],
+        updatedAt: 1,
+      }],
+    },
+  );
+
+  assert.equal(analysis.documents[0].root.automaticState, "MET");
+  assert.equal(analysis.documents[0].root.state, "NOT_MET");
+  assert.equal(analysis.state, "NOT_MET");
+});
+
+test("note-only edits preserve automatic state and support fallback node keys", () => {
+  const root = node("course_completed", {
+    node_id: undefined,
+    tree_path: "requirements.0",
+    refs: [reference("CS135")],
+  });
+  const analysis = evaluateRequirementDocuments(
+    [document(root)],
+    context([]),
+    {
+      nodeOverrides: [{
+        id: "override-note",
+        documentId: "document-1",
+        nodeKey: "index:root",
+        state: null,
+        note: "Waiting for transfer-credit review.",
+        references: [],
+        updatedAt: 1,
+      }],
+    },
+  );
+
+  assert.equal(analysis.documents[0].root.nodeKey, "index:root");
+  assert.equal(analysis.documents[0].root.automaticState, "NOT_MET");
+  assert.equal(analysis.documents[0].root.state, "NOT_MET");
+  assert.equal(analysis.documents[0].root.containsManualStatusOverride, false);
+  assert.equal(analysis.documents[0].root.manualOverride.note, "Waiting for transfer-credit review.");
+});
+
+test("a manual status can resolve a partial document", () => {
+  const root = node("opaque", {
+    node_id: "partial-root",
+    text: "Approval of the department",
+    evaluability: "manual",
+    parse_status: "partial",
+  });
+  const analysis = evaluateRequirementDocuments(
+    [document(root, { parseStatus: "partial", evaluability: "mixed" })],
+    context([]),
+    {
+      nodeOverrides: [{
+        id: "override-partial",
+        documentId: "document-1",
+        nodeKey: "index:root",
+        state: "MET",
+        note: "Department approval received.",
+        references: [],
+        updatedAt: 1,
+      }],
+    },
+  );
+
+  assert.equal(analysis.documents[0].root.automaticState, "UNKNOWN");
+  assert.equal(analysis.documents[0].state, "MET");
+  assert.equal(analysis.state, "MET");
+});
+
+test("known condition nodes retain children and use their final states", () => {
+  const root = node("course_completed", {
+    refs: [reference("CS135")],
+    children: [
+      node("course_completed", {
+        node_id: "nested-course",
+        refs: [reference("MATH135")],
+      }),
+    ],
+  });
+  const analysis = evaluateRequirementDocuments(
+    [document(root)],
+    context([
+      { coursePid: "cs135-pid", courseCode: "CS135", status: "completed" },
+      { coursePid: "math135-pid", courseCode: "MATH135", status: "completed" },
+    ]),
+    {
+      nodeOverrides: [{
+        id: "nested-override",
+        documentId: "document-1",
+        nodeKey: "index:0",
+        state: "NOT_MET",
+        note: null,
+        references: [],
+        updatedAt: 1,
+      }],
+    },
+  );
+
+  assert.equal(analysis.documents[0].root.children.length, 1);
+  assert.equal(analysis.documents[0].root.children[0].automaticState, "MET");
+  assert.equal(analysis.documents[0].root.children[0].state, "NOT_MET");
+  assert.equal(analysis.documents[0].root.automaticState, "NOT_MET");
+  assert.equal(analysis.state, "NOT_MET");
+});
+
+test("descendant edits do not certify unresolved or partial ancestors", () => {
+  const unresolvedRoot = node("unsupported_scope", {
+    children: [
+      node("course_completed", {
+        refs: [reference("CS135")],
+      }),
+    ],
+  });
+  const override = {
+    id: "child-override",
+    documentId: "document-1",
+    nodeKey: "index:0",
+    state: "MET",
+    note: null,
+    references: [],
+    updatedAt: 1,
+  };
+  const unresolved = evaluateRequirementDocuments(
+    [document(unresolvedRoot)],
+    context([{ coursePid: "cs135-pid", courseCode: "CS135", status: "completed" }]),
+    { nodeOverrides: [override] },
+  );
+  const partial = evaluateRequirementDocuments(
+    [document(node("group", {
+      logic: "all",
+      children: [node("course_completed", { refs: [reference("CS135")] })],
+    }), { parseStatus: "partial", evaluability: "mixed" })],
+    context([{ coursePid: "cs135-pid", courseCode: "CS135", status: "completed" }]),
+    { nodeOverrides: [override] },
+  );
+
+  assert.equal(unresolved.documents[0].root.state, "UNKNOWN");
+  assert.equal(partial.documents[0].computedState, "MET");
+  assert.equal(partial.documents[0].state, "UNKNOWN");
+});
+
+test("duplicate source ids remain independently overridable by path", () => {
+  const root = node("group", {
+    logic: "all",
+    children: [
+      node("course_completed", {
+        node_id: "duplicate",
+        refs: [reference("CS135")],
+      }),
+      node("course_completed", {
+        node_id: "duplicate",
+        refs: [reference("MATH135")],
+      }),
+    ],
+  });
+  const analysis = evaluateRequirementDocuments(
+    [document(root)],
+    context([]),
+    {
+      nodeOverrides: [{
+        id: "first-only",
+        documentId: "document-1",
+        nodeKey: "index:0",
+        state: "MET",
+        note: null,
+        references: [],
+        updatedAt: 1,
+      }],
+    },
+  );
+
+  assert.equal(analysis.documents[0].root.children[0].state, "MET");
+  assert.equal(analysis.documents[0].root.children[1].state, "NOT_MET");
+  assert.equal(analysis.documents[0].root.children[1].manualOverride, undefined);
+  assert.equal(analysis.state, "NOT_MET");
 });
 
 test("a met any alternative safely dominates an unresolved alternative", () => {

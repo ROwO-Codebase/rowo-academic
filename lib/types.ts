@@ -270,12 +270,35 @@ export interface RequirementEvaluationContext {
   totalUnits?: number | null;
 }
 
+export interface RequirementNodeManualReference {
+  id: string;
+  targetType: "course" | "program";
+  targetPid: string;
+  targetVersionId: string;
+  targetCode: string;
+  targetTitle: string;
+  credits: number | null;
+  resolutionStatus: "resolved";
+}
+
+export interface RequirementNodeManualOverride {
+  id: string;
+  documentId: string;
+  nodeKey: string;
+  state: TriState | null;
+  note: string | null;
+  references: RequirementNodeManualReference[];
+  updatedAt: number;
+}
+
 export interface RequirementEvaluationOptions {
   includePlanned?: boolean;
+  nodeOverrides?: RequirementNodeManualOverride[];
 }
 
 export interface RequirementNodeEvaluation {
   nodeId: string | null;
+  nodeKey: string;
   nodeType: string;
   text: string | null;
   logic: string | null;
@@ -284,12 +307,16 @@ export interface RequirementNodeEvaluation {
   references: RequirementDisplayReference[];
   presentation: RequirementNodePresentation;
   state: TriState;
+  automaticState: TriState;
   provisionalState?: TriState;
   reason: string;
   referenceEvaluations: RequirementReferenceEvaluation[];
   matchedCourseCodes: string[];
   unmetCourseCodes: string[];
   unknownReasons: string[];
+  manualOverride?: RequirementNodeManualOverride;
+  containsManualOverride: boolean;
+  containsManualStatusOverride: boolean;
   children: RequirementNodeEvaluation[];
 }
 

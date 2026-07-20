@@ -1,7 +1,12 @@
 import { env } from "cloudflare:workers";
 import { desc, eq } from "drizzle-orm";
 import { getUserDb } from "@/db";
-import { courseRecords, userPrograms } from "@/db/schema";
+import {
+  courseRecords,
+  requirementNodeOverrideReferences,
+  requirementNodeOverrides,
+  userPrograms,
+} from "@/db/schema";
 import {
   AcademicDataError,
   getCatalogMetadata,
@@ -13,6 +18,7 @@ import {
   countedAcademicUnits,
   isNonAcademicCourseCode,
 } from "@/lib/course-records";
+import { requirementDocumentSourceKey } from "@/lib/requirement-overrides";
 import {
   collectUnmetCourseCodes,
   evaluateRequirementDocuments,
@@ -24,6 +30,7 @@ import {
 } from "@/lib/student-program-evidence";
 import type {
   AcademicEnvironment,
+  RequirementNodeManualOverride,
   RequirementEvaluationContext,
   StudentCourseRecord,
 } from "@/lib/types";
@@ -133,7 +140,8 @@ export async function GET(request: Request) {
     }
 
     const db = getUserDb();
-    const [programRows, records] = await Promise.all([
+    const [programRows, records, overrideRows, overrideReferenceJoinRows] =
+      await Promise.all([
       db
         .select()
         .from(userPrograms)
@@ -144,7 +152,34 @@ export async function GET(request: Request) {
         .from(courseRecords)
         .where(eq(courseRecords.userId, session.user.localId))
         .orderBy(desc(courseRecords.updatedAt)),
+      db
+        .select()
+        .from(requirementNodeOverrides)
+        .where(eq(requirementNodeOverrides.userId, session.user.localId)),
+      db
+        .select({ reference: requirementNodeOverrideReferences })
+        .from(requirementNodeOverrideReferences)
+        .innerJoin(
+          requirementNodeOverrides,
+          eq(
+            requirementNodeOverrideReferences.overrideId,
+            requirementNodeOverrides.id,
+          ),
+        )
+        .where(eq(requirementNodeOverrides.userId, session.user.localId)),
     ]);
+    const overrideReferenceRows = overrideReferenceJoinRows.map(
+      (row) => row.reference,
+    );
+    const referencesByOverride = new Map<
+      string,
+      typeof overrideReferenceRows
+    >();
+    for (const reference of overrideReferenceRows) {
+      const references = referencesByOverride.get(reference.overrideId) ?? [];
+      references.push(reference);
+      referencesByOverride.set(reference.overrideId, references);
+    }
     const selectedProgram =
       programRows.find((program) => program.isPrimary) ?? programRows[0] ?? null;
     const academicEnv = env as unknown as AcademicEnvironment;
@@ -180,7 +215,56 @@ export async function GET(request: Request) {
           programs: evaluationPrograms,
           completedUnits: sharedCompletedUnits,
         };
-        const requirementAnalysis = evaluateRequirementDocuments(documents, context);
+        const versionMatches = program?.versionId === savedProgram.programVersionId;
+        const currentDocuments = documents.filter(
+          (document) =>
+            document.catalogId === savedProgram.catalogId &&
+            document.ownerPid === savedProgram.programPid &&
+            document.ownerVersionId === savedProgram.programVersionId,
+        );
+        const documentSourceKeys = new Map(
+          await Promise.all(
+            currentDocuments.map(async (document) => [
+              document.documentId,
+              await requirementDocumentSourceKey(document),
+            ] as const),
+          ),
+        );
+        const nodeOverrides: RequirementNodeManualOverride[] = overrideRows
+          .filter(
+            (override) =>
+              versionMatches &&
+              override.userProgramId === savedProgram.id &&
+              override.catalogId === savedProgram.catalogId &&
+              override.programVersionId === savedProgram.programVersionId &&
+              documentSourceKeys.get(override.documentId) ===
+                override.documentSourceHash,
+          )
+          .map((override) => ({
+            id: override.id,
+            documentId: override.documentId,
+            nodeKey: override.nodeKey,
+            state: override.state,
+            note: override.note,
+            references: (referencesByOverride.get(override.id) ?? []).map(
+              (reference) => ({
+                id: reference.id,
+                targetType: reference.targetType,
+                targetPid: reference.targetPid,
+                targetVersionId: reference.targetVersionId,
+                targetCode: reference.targetCode,
+                targetTitle: reference.targetTitle,
+                credits: reference.credits,
+                resolutionStatus: "resolved" as const,
+              }),
+            ),
+            updatedAt: override.updatedAt,
+          }));
+        const requirementAnalysis = evaluateRequirementDocuments(
+          documents,
+          context,
+          { nodeOverrides },
+        );
         const unmetCodes = new Set(collectUnmetCourseCodes(requirementAnalysis));
         const documentStates = new Map(
           requirementAnalysis.documents.map((document) => [

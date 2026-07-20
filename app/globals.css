@@ -16,6 +16,8 @@
   --indigo-700: #4338ca;
   --indigo-600: #4f46e5;
   --indigo-500: #6366f1;
+  --indigo-300: #a5b4fc;
+  --indigo-200: #c7d2fe;
   --indigo-100: #e0e7ff;
   --indigo-50: #eef2ff;
   --emerald-700: #047857;
@@ -66,7 +68,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -1325,6 +1328,25 @@ button {
   gap: 8px;
 }
 
+.external-course-link-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border-radius: 3px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.external-course-link-icon.uwflow {
+  background-image: url("https://uwflow.com/favicon/favicon-32x32.png");
+}
+
+.external-course-link-icon.reddit {
+  background-image: url("https://www.redditstatic.com/desktop2x/img/favicon/favicon-32x32.png");
+}
+
 .browser-eligibility {
   display: grid;
   margin-top: 18px;
@@ -1630,6 +1652,131 @@ button {
   background: var(--indigo-50);
   color: var(--indigo-700);
   font-size: 10px;
+}
+
+.requirement-node-state.state-editable {
+  background: var(--slate-100);
+  color: var(--indigo-700);
+  font-size: 10px;
+}
+
+.requirement-node-state.requirement-node-override-button {
+  width: 24px;
+  height: 24px;
+  margin: -3px 0;
+  padding: 0;
+  border: 1px solid transparent;
+  flex: 0 0 24px;
+  font: inherit;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.requirement-node-state.requirement-node-override-button.state-course-activity,
+.requirement-node-state.requirement-node-override-button.state-editable {
+  font-size: 11px;
+}
+
+.requirement-node-state.requirement-node-override-button:hover {
+  border-color: var(--indigo-300);
+  box-shadow: 0 2px 7px rgb(79 70 229 / 0.18);
+  transform: translateY(-1px);
+}
+
+.requirement-node-state.requirement-node-override-button:focus-visible {
+  border-color: var(--indigo-500);
+  outline: 2px solid var(--indigo-500);
+  outline-offset: 2px;
+}
+
+.requirement-node-state.requirement-node-override-button.is-overridden {
+  border-color: var(--indigo-500);
+  box-shadow:
+    0 0 0 2px var(--white),
+    0 0 0 4px var(--indigo-300);
+}
+
+.requirement-tree-node.is-manually-overridden,
+.requirement-tree.is-manually-overridden {
+  padding: 8px 9px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--indigo-50) 72%, var(--white));
+  box-shadow: inset 3px 0 0 var(--indigo-500);
+}
+
+.requirement-tree-node.is-manually-overridden {
+  margin: 5px 0;
+}
+
+.requirement-root-manual-marker {
+  display: flex;
+  margin: 0 0 8px;
+  align-items: center;
+}
+
+.requirement-manual-badge {
+  display: inline-flex;
+  min-height: 18px;
+  padding: 3px 6px;
+  border: 1px solid var(--indigo-200);
+  border-radius: 999px;
+  align-items: center;
+  background: var(--white);
+  color: var(--indigo-700);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.requirement-manual-details {
+  margin: 8px 0 0 31px;
+}
+
+.requirement-manual-note {
+  display: grid;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--indigo-100);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--slate-600);
+  gap: 2px;
+  white-space: pre-wrap;
+}
+
+.requirement-manual-note strong,
+.requirement-manual-section-label {
+  color: var(--indigo-700);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.requirement-manual-references {
+  margin-top: 8px;
+}
+
+.requirement-manual-reference-list {
+  margin-top: 4px;
+}
+
+.requirement-manual-reference-list > li {
+  padding: 6px 8px;
+  border: 1px dashed var(--indigo-200);
+  border-radius: 8px;
+  background: var(--white);
+}
+
+.requirement-manual-reference-list > li::before {
+  background: var(--indigo-500);
 }
 
 .requirement-reference-list > li.leaf-state-in_progress::before,
@@ -2198,6 +2345,280 @@ button {
   padding: 20px 22px 22px;
 }
 
+.requirement-override-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-md);
+  background: var(--white);
+  box-shadow: 0 28px 80px rgb(15 23 42 / 0.3);
+  color: var(--slate-900);
+}
+
+.requirement-override-dialog::backdrop {
+  background: rgb(15 23 42 / 0.48);
+  backdrop-filter: blur(2px);
+}
+
+.requirement-override-form {
+  display: grid;
+  max-height: calc(100dvh - 34px);
+  margin: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.requirement-override-dialog .course-edit-header small {
+  display: block;
+  margin-top: 4px;
+  color: var(--slate-500);
+  font-size: 10px;
+}
+
+.requirement-override-body {
+  padding: 20px 22px 22px;
+  overflow-y: auto;
+}
+
+.override-section {
+  padding: 16px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-sm);
+  background: var(--slate-50);
+}
+
+.override-section + .override-section {
+  margin-top: 12px;
+}
+
+.override-section-heading {
+  display: flex;
+  margin-bottom: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.override-section-heading h3,
+.override-section-heading p {
+  margin: 0;
+}
+
+.override-section-heading h3 {
+  color: var(--slate-900);
+  font-size: 13px;
+}
+
+.override-section-heading p {
+  margin-top: 3px;
+  color: var(--slate-500);
+  font-size: 10px;
+}
+
+.override-section-heading > button,
+.override-reference-selection button {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--rose-700);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.override-status-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.override-status-options label {
+  display: grid;
+  min-height: 62px;
+  padding: 10px 11px;
+  border: 1px solid var(--slate-200);
+  border-radius: 10px;
+  align-items: start;
+  background: var(--white);
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.override-status-options label:hover {
+  border-color: var(--indigo-300);
+}
+
+.override-status-options label.selected {
+  border-color: var(--indigo-500);
+  background: var(--indigo-50);
+  box-shadow: inset 0 0 0 1px var(--indigo-100);
+}
+
+.override-status-options input {
+  margin: 3px 0 0;
+  accent-color: var(--indigo-600);
+}
+
+.override-status-options span,
+.override-status-options strong,
+.override-status-options small {
+  display: block;
+}
+
+.override-status-options strong {
+  color: var(--slate-800);
+  font-size: 11px;
+}
+
+.override-status-options small {
+  margin-top: 2px;
+  color: var(--slate-500);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.override-reference-selection {
+  display: grid;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  gap: 6px;
+}
+
+.override-reference-selection li {
+  display: flex;
+  padding: 8px 10px;
+  border: 1px solid var(--indigo-100);
+  border-radius: 9px;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--white);
+  gap: 12px;
+  color: var(--slate-600);
+  font-size: 10px;
+}
+
+.override-reference-selection strong {
+  color: var(--indigo-700);
+}
+
+.override-reference-search {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 108px minmax(0, 1fr) 18px;
+  gap: 8px;
+}
+
+.override-reference-search select,
+.override-reference-search input,
+.override-section textarea {
+  width: 100%;
+  border: 1px solid var(--slate-200);
+  border-radius: 9px;
+  background: var(--white);
+  color: var(--slate-800);
+  font-size: 11px;
+}
+
+.override-reference-search select,
+.override-reference-search input {
+  min-height: 39px;
+  padding: 8px 10px;
+}
+
+.override-section textarea {
+  min-height: 104px;
+  padding: 10px 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.override-reference-search select:focus,
+.override-reference-search input:focus,
+.override-section textarea:focus {
+  border-color: var(--indigo-500);
+  outline: 2px solid rgb(99 102 241 / 0.18);
+}
+
+.override-reference-results {
+  display: grid;
+  max-height: 190px;
+  margin-top: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--slate-200);
+  border-radius: 10px;
+  background: var(--white);
+}
+
+.override-reference-results > p {
+  margin: 0;
+  padding: 12px;
+  color: var(--slate-500);
+  font-size: 10px;
+}
+
+.override-reference-results button {
+  display: grid;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--slate-100);
+  align-items: center;
+  background: transparent;
+  grid-template-columns: minmax(84px, auto) minmax(0, 1fr) auto;
+  gap: 9px;
+  color: var(--slate-600);
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.override-reference-results button:last-child {
+  border-bottom: 0;
+}
+
+.override-reference-results button:hover {
+  background: var(--indigo-50);
+}
+
+.override-reference-results button strong {
+  color: var(--indigo-700);
+}
+
+.override-reference-results button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.override-reference-results button small {
+  color: var(--indigo-600);
+  font-weight: 800;
+}
+
+.override-form-actions {
+  display: flex;
+  align-items: center;
+}
+
+.override-form-actions > span {
+  flex: 1;
+}
+
+.button-danger-outline {
+  border-color: var(--rose-100);
+  background: var(--white);
+  color: var(--rose-700);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-danger-outline:hover:not(:disabled) {
+  border-color: var(--rose-600);
+  background: var(--rose-50);
+}
+
 .eligibility-blocked {
   background: var(--rose-100);
   color: var(--rose-700);
@@ -2434,6 +2855,12 @@ button {
   border-left-color: var(--amber-600);
 }
 
+.requirement-card.has-manual-overrides {
+  box-shadow:
+    inset 0 0 0 1px var(--indigo-100),
+    var(--shadow-sm);
+}
+
 .requirement-card-top {
   display: grid;
   grid-template-columns: 36px 1fr auto;
@@ -2449,6 +2876,35 @@ button {
   place-items: center;
   font-size: 13px;
   font-weight: 900;
+}
+
+.requirement-override-root-trigger {
+  padding: 0;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.requirement-override-root-trigger:hover {
+  border-color: var(--indigo-300);
+  box-shadow: 0 4px 12px rgb(79 70 229 / 0.18);
+  transform: translateY(-1px);
+}
+
+.requirement-override-root-trigger:focus-visible {
+  border-color: var(--indigo-500);
+  outline: 2px solid var(--indigo-500);
+  outline-offset: 2px;
+}
+
+.requirement-override-root-trigger.is-manually-overridden {
+  border-color: var(--indigo-500);
+  box-shadow:
+    0 0 0 2px var(--white),
+    0 0 0 4px var(--indigo-300);
 }
 
 .requirement-symbol.met,
@@ -2479,6 +2935,20 @@ button {
   margin: 4px 0 0;
   color: var(--slate-500);
   font-size: 12px;
+}
+
+.requirement-manual-summary {
+  display: inline-flex;
+  margin-top: 7px;
+  padding: 3px 7px;
+  border: 1px solid var(--indigo-200);
+  border-radius: 999px;
+  background: var(--indigo-50);
+  color: var(--indigo-700);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .requirement-note {
@@ -4261,6 +4731,46 @@ button {
 
   .guest-course-result {
     grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .requirement-override-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .requirement-override-form {
+    max-height: calc(100dvh - 18px);
+  }
+
+  .requirement-override-dialog .course-edit-header,
+  .requirement-override-body {
+    padding-inline: 16px;
+  }
+
+  .override-status-options {
+    grid-template-columns: 1fr;
+  }
+
+  .override-reference-search {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .override-reference-search .spinner {
+    display: none;
+  }
+
+  .override-form-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .override-form-actions > span {
+    display: none;
+  }
+
+  .override-form-actions .button-danger-outline {
+    grid-column: 1 / -1;
   }
 }
 

@@ -269,10 +269,16 @@ test("fits long Browse codes and links course details to external resources", as
 
   assert.doesNotMatch(browser, /<span className="choose-program">View<\/span>/);
   assert.match(browser, /View on UWFlow/);
+  assert.match(browser, /Search on Reddit/);
+  assert.match(browser, /redditCourseSearchUrl\(detail\.course\.code\)/);
   assert.match(browser, /View course outline/);
   assert.match(styles, /minmax\(64px, max-content\)/);
   assert.match(styles, /\.external-course-links/);
+  assert.match(styles, /\.external-course-link-icon/);
+  assert.match(styles, /https:\/\/uwflow\.com\/favicon\/favicon-32x32\.png/);
+  assert.match(styles, /redditstatic\.com\/desktop2x\/img\/favicon\/favicon-32x32\.png/);
   assert.match(links, /https:\/\/uwflow\.com\/course\//);
+  assert.match(links, /https:\/\/www\.reddit\.com\/r\/uwaterloo\/search\//);
   assert.match(links, /https:\/\/outline\.uwaterloo\.ca\/viewer\/\?q=/);
 });
 
@@ -404,6 +410,55 @@ test("keeps the optional grade field free of placeholder text", async () => {
   assert.doesNotMatch(dashboard, /placeholder=\{[\s\S]*?\? "82"/);
   assert.doesNotMatch(browser, /Completed or transfer only/);
   assert.doesNotMatch(browser, /placeholder="82"/);
+});
+
+test("persists and edits per-user manual requirement-node overrides", async () => {
+  const [
+    dashboardUi,
+    tree,
+    dashboardRoute,
+    saveRoute,
+    deleteRoute,
+    schema,
+    migration,
+    styles,
+  ] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("components/RequirementTree.tsx"),
+    source("app/api/dashboard/route.ts"),
+    source("app/api/progress/overrides/route.ts"),
+    source("app/api/progress/overrides/[id]/route.ts"),
+    source("db/schema.ts"),
+    source("drizzle/0001_huge_wolfpack.sql"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(schema, /requirement_node_overrides/);
+  assert.match(schema, /requirement_node_override_references/);
+  assert.match(schema, /table\.userId,[\s\S]*?table\.userProgramId/);
+  assert.match(migration, /requirement_node_overrides_current_node_uq/);
+  assert.match(saveRoute, /isSameOriginMutation/);
+  assert.match(saveRoute, /eq\(userPrograms\.userId, session\.user\.localId\)/);
+  assert.match(saveRoute, /findRequirementNodeByKey/);
+  assert.match(saveRoute, /await db\.batch\(\[saveOverride, deleteReferences\]\)/);
+  assert.match(deleteRoute, /eq\(requirementNodeOverrides\.userId, session\.user\.localId\)/);
+  assert.match(dashboardRoute, /requirementDocumentSourceKey/);
+  assert.match(dashboardRoute, /versionMatches/);
+  assert.match(dashboardRoute, /nodeOverrides/);
+
+  assert.match(dashboardUi, /function RequirementOverrideDialog/);
+  assert.match(dashboardUi, /Satisfied/);
+  assert.match(dashboardUi, /Unsatisfied/);
+  assert.match(dashboardUi, /Uncertain/);
+  assert.match(dashboardUi, /Course or plan references/);
+  assert.match(dashboardUi, /Remove note/);
+  assert.match(dashboardUi, /Revert manual edit/);
+  assert.match(tree, /requirement-node-override-button/);
+  assert.match(tree, /aria-haspopup="dialog"/);
+  assert.match(tree, /ManualOverrideDetails/);
+  assert.match(tree, /manualOverride && "is-manually-overridden"/);
+  assert.match(styles, /\.requirement-override-dialog/);
+  assert.match(styles, /\.requirement-tree-node\.is-manually-overridden/);
 });
 
 test("includes an initial app-database migration and never stores the SSO token in browser storage", async () => {

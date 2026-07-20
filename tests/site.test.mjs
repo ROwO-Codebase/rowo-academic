@@ -365,6 +365,7 @@ test("edits course status, term, and grade from an Overview dialog", async () =>
   assert.match(updateRoute, /eq\(courseRecords\.userId, session\.user\.localId\)/);
   assert.match(updateRoute, /A grade can only be recorded for completed or transfer courses/);
   assert.match(styles, /\.course-edit-dialog/);
+  assert.match(styles, /dialog\[open\][\s\S]*?inset: 0;[\s\S]*?margin: auto;/);
   assert.match(styles, /\.course-action-buttons/);
 });
 

@@ -66,6 +66,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+dialog[open] {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+}
+
 button,
 input,
 select,

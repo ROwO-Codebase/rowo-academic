@@ -19,6 +19,13 @@ import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
 import { isCourseRequirementSection } from "@/lib/requirement-sections";
 import { requirementNodeKey } from "@/lib/requirement-overrides";
 import {
+  createCourseSchedulePdf,
+  createCourseScheduleXlsx,
+  createPlanProgressChecklistPdf,
+  downloadGeneratedExport,
+  shareGeneratedExport,
+} from "@/lib/dashboard-exports";
+import {
   buildRequirementAnchorRegistry,
   buildTrackedProgramAnchorRegistry,
   type RequirementAnchorRegistry,
@@ -1906,9 +1913,221 @@ function RequirementOverrideDialog({
   );
 }
 
+type ExportDialogMode = "schedule" | "progress";
+
+function ExportShareDialog({
+  mode,
+  dashboard,
+  onClose,
+  setNotice,
+}: {
+  mode: ExportDialogMode;
+  dashboard: DashboardPayload;
+  onClose: () => void;
+  setNotice: (message: string) => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const [scheduleFormat, setScheduleFormat] = useState<"xlsx" | "pdf">("xlsx");
+  const [includeGrades, setIncludeGrades] = useState(false);
+  const [busyAction, setBusyAction] = useState<"download" | "share" | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+
+  function generateExport() {
+    const generatedAt = new Date();
+    if (mode === "schedule") {
+      const courses = dashboard.courses.map((course) => ({
+        code: course.code,
+        title: course.title,
+        term: course.term,
+        status: course.status,
+        credits: course.credits,
+        grade: course.grade,
+      }));
+      return scheduleFormat === "xlsx"
+        ? createCourseScheduleXlsx(courses, includeGrades, generatedAt)
+        : createCourseSchedulePdf(courses, includeGrades, generatedAt);
+    }
+    return createPlanProgressChecklistPdf(
+      dashboard.programs.map((program) => ({
+        title: program.profile.programTitle,
+        code: program.profile.programCode,
+        credential: program.profile.credential,
+        faculty: program.profile.faculty,
+        requirements: program.requirements.map((requirement) => ({
+          title: requirement.title,
+          status: requirement.status,
+          description: requirement.description,
+          evidence: requirement.evidence,
+          missing: requirement.missing,
+        })),
+      })),
+      generatedAt,
+    );
+  }
+
+  async function exportDocument(action: "download" | "share") {
+    setBusyAction(action);
+    setErrorMessage("");
+    try {
+      const exported = generateExport();
+      if (action === "download") {
+        downloadGeneratedExport(exported);
+        setNotice(exported.filename + " was downloaded.");
+        onClose();
+        return;
+      }
+      const result = await shareGeneratedExport(exported);
+      if (result === "cancelled") return;
+      setNotice(
+        result === "shared"
+          ? exported.filename + " was shared."
+          : "Sharing is unavailable here, so " + exported.filename + " was downloaded.",
+      );
+      onClose();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "The document could not be prepared.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  const busy = busyAction !== null;
+  const isSchedule = mode === "schedule";
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="export-share-dialog"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <div className="course-edit-header">
+        <div>
+          <span>{isSchedule ? "Course schedule" : "Plan progress"}</span>
+          <h2 id={titleId}>Export &amp; share</h2>
+          <small>
+            Files are created on this device. Your plan and grades stay private.
+          </small>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label="Close export and share dialog"
+          disabled={busy}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="export-share-body">
+        {isSchedule ? (
+          <>
+            <fieldset className="export-format-options">
+              <legend>File format</legend>
+              <label className={scheduleFormat === "xlsx" ? "selected" : ""}>
+                <input
+                  type="radio"
+                  name="schedule-export-format"
+                  value="xlsx"
+                  checked={scheduleFormat === "xlsx"}
+                  disabled={busy}
+                  onChange={() => setScheduleFormat("xlsx")}
+                />
+                <span>
+                  <strong>Excel workbook</strong>
+                  <small>Filter, sort, and edit your schedule in a spreadsheet.</small>
+                </span>
+                <b>.xlsx</b>
+              </label>
+              <label className={scheduleFormat === "pdf" ? "selected" : ""}>
+                <input
+                  type="radio"
+                  name="schedule-export-format"
+                  value="pdf"
+                  checked={scheduleFormat === "pdf"}
+                  disabled={busy}
+                  onChange={() => setScheduleFormat("pdf")}
+                />
+                <span>
+                  <strong>Schedule PDF</strong>
+                  <small>A polished, read-only schedule that is easy to print.</small>
+                </span>
+                <b>.pdf</b>
+              </label>
+            </fieldset>
+            <label className="export-grade-option">
+              <input
+                type="checkbox"
+                checked={includeGrades}
+                disabled={busy}
+                onChange={(event) => setIncludeGrades(event.target.checked)}
+              />
+              <span>
+                <strong>Include grades</strong>
+                <small>Leave this off when sharing your schedule publicly.</small>
+              </span>
+            </label>
+          </>
+        ) : (
+          <div className="export-progress-summary">
+            <span aria-hidden="true">☑</span>
+            <div>
+              <strong>Checklist PDF</strong>
+              <p>
+                Export {dashboard.programs.length} tracked {dashboard.programs.length === 1 ? "plan" : "plans"}
+                {" "}with completed, planned, and remaining requirements.
+              </p>
+            </div>
+            <b>.pdf</b>
+          </div>
+        )}
+
+        <p className="export-share-note">
+          Share opens your device&apos;s share menu when supported. Otherwise, the file
+          downloads so you can attach it anywhere.
+        </p>
+        {errorMessage && <p className="form-error" role="alert">{errorMessage}</p>}
+        <div className="form-actions export-share-actions">
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={busy}
+            onClick={() => void exportDocument("download")}
+          >
+            {busyAction === "download" ? "Preparing…" : "Download"}
+          </button>
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={busy}
+            onClick={() => void exportDocument("share")}
+          >
+            {busyAction === "share" ? "Preparing…" : "Share file"}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
 function OverviewPanel({
   dashboard,
   onOpenCatalog,
+  onExport,
   onReload,
   busyCourseId,
   setBusyCourseId,
@@ -1916,6 +2135,7 @@ function OverviewPanel({
 }: {
   dashboard: DashboardPayload;
   onOpenCatalog: () => void;
+  onExport: () => void;
   onReload: () => Promise<void>;
   busyCourseId: string | null;
   setBusyCourseId: (id: string | null) => void;
@@ -2027,10 +2247,15 @@ function OverviewPanel({
               : ""}
           </p>
         </div>
-        <button className="button button-primary" type="button" onClick={onOpenCatalog}>
-          Add a course
-          <span aria-hidden="true">＋</span>
-        </button>
+        <div className="dashboard-hero-actions">
+          <button className="button button-secondary" type="button" onClick={onExport}>
+            Export &amp; share
+          </button>
+          <button className="button button-primary" type="button" onClick={onOpenCatalog}>
+            Add a course
+            <span aria-hidden="true">＋</span>
+          </button>
+        </div>
       </section>
 
       {summary ? (
@@ -2378,10 +2603,12 @@ function RequirementCard({
 
 function ProgressPanel({
   dashboard,
+  onExport,
   onReload,
   setNotice,
 }: {
   dashboard: DashboardPayload;
+  onExport: () => void;
   onReload: () => Promise<void>;
   setNotice: (message: string) => void;
 }) {
@@ -2492,6 +2719,13 @@ function ProgressPanel({
           </p>
         </div>
         <div className="progress-heading-controls">
+          <button
+            className="button button-secondary button-compact"
+            type="button"
+            onClick={onExport}
+          >
+            Export checklist
+          </button>
           <button
             className="button button-secondary button-compact"
             type="button"
@@ -3458,6 +3692,7 @@ export function AcademicDashboard({
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
+  const [exportDialogMode, setExportDialogMode] = useState<ExportDialogMode | null>(null);
   const [busyCourseId, setBusyCourseId] = useState<string | null>(null);
   const [catalogInitialQuery, setCatalogInitialQuery] = useState(initialQuery);
   const [catalogInitialTerm, setCatalogInitialTerm] = useState("");
@@ -3658,6 +3893,7 @@ export function AcademicDashboard({
               <OverviewPanel
                 dashboard={dashboard}
                 onOpenCatalog={() => openCatalog("completed", "")}
+                onExport={() => setExportDialogMode("schedule")}
                 onReload={reloadOverview}
                 busyCourseId={busyCourseId}
                 setBusyCourseId={setBusyCourseId}
@@ -3668,6 +3904,7 @@ export function AcademicDashboard({
               tabLoadStates.progress === "ready" && (
               <ProgressPanel
                 dashboard={dashboard}
+                onExport={() => setExportDialogMode("progress")}
                 onReload={reloadProgress}
                 setNotice={setNotice}
               />
@@ -3738,6 +3975,14 @@ export function AcademicDashboard({
             onChange={setActiveTab}
             className="mobile-dashboard-nav"
           />
+          {exportDialogMode && (
+            <ExportShareDialog
+              mode={exportDialogMode}
+              dashboard={dashboard}
+              onClose={() => setExportDialogMode(null)}
+              setNotice={setNotice}
+            />
+          )}
         </>
       )}
 

@@ -150,6 +150,23 @@ test("loads dashboard data by active tab and checks planner eligibility on entry
   assert.match(dashboard, /void checkEligibility\(false\)/);
 });
 
+test("exports and shares private schedule and progress files from the active dashboard tab", async () => {
+  const [dashboard, exportsSource] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("lib/dashboard-exports.ts"),
+  ]);
+
+  assert.match(dashboard, /Export &amp; share/);
+  assert.match(dashboard, /Export checklist/);
+  assert.match(dashboard, /Include grades/);
+  assert.match(dashboard, /createCourseScheduleXlsx/);
+  assert.match(dashboard, /createCourseSchedulePdf/);
+  assert.match(dashboard, /createPlanProgressChecklistPdf/);
+  assert.match(exportsSource, /navigator\.share/);
+  assert.match(exportsSource, /downloadGeneratedExport\(exported\)/);
+  assert.match(exportsSource, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
+});
+
 test("renders actual requirement AST nodes as cascaded linked detail trees", async () => {
   const [summary, tree, anchors, browser, dashboard, styles] = await Promise.all([
     source("lib/public-academic.ts"),

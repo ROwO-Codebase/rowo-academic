@@ -1922,6 +1922,13 @@ button {
   font-size: 15px;
 }
 
+.dashboard-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .degree-progress-card,
 .content-card,
 .catalog-search-card {
@@ -2349,6 +2356,151 @@ button {
 
 .course-edit-body {
   padding: 20px 22px 22px;
+}
+
+.export-share-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-md);
+  background: var(--white);
+  box-shadow: 0 28px 80px rgb(15 23 42 / 0.3);
+  color: var(--slate-900);
+}
+
+.export-share-dialog::backdrop {
+  background: rgb(15 23 42 / 0.48);
+  backdrop-filter: blur(2px);
+}
+
+.export-share-dialog .course-edit-header small {
+  display: block;
+  max-width: 430px;
+  margin-top: 5px;
+  color: var(--slate-500);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.export-share-body {
+  padding: 20px 22px 22px;
+}
+
+.export-format-options {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: 9px;
+}
+
+.export-format-options legend {
+  margin-bottom: 9px;
+  color: var(--slate-700);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.export-format-options label,
+.export-grade-option,
+.export-progress-summary {
+  display: flex;
+  padding: 15px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.export-format-options label {
+  cursor: pointer;
+}
+
+.export-format-options label:hover,
+.export-format-options label.selected {
+  border-color: var(--indigo-300);
+  background: var(--indigo-50);
+}
+
+.export-format-options input,
+.export-grade-option input {
+  width: 17px;
+  height: 17px;
+  margin: 2px 0 0;
+  accent-color: var(--indigo-600);
+  flex: 0 0 auto;
+}
+
+.export-format-options label > span,
+.export-grade-option > span,
+.export-progress-summary > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.export-format-options strong,
+.export-grade-option strong,
+.export-progress-summary strong {
+  color: var(--slate-900);
+  font-size: 13px;
+}
+
+.export-format-options small,
+.export-grade-option small {
+  color: var(--slate-500);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.export-format-options label > b,
+.export-progress-summary > b {
+  color: var(--indigo-600);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.export-grade-option {
+  margin-top: 14px;
+  background: var(--slate-50);
+  cursor: pointer;
+}
+
+.export-progress-summary {
+  background: var(--indigo-50);
+  border-color: var(--indigo-200);
+}
+
+.export-progress-summary > span {
+  color: var(--indigo-600);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.export-progress-summary p {
+  margin: 0;
+  color: var(--slate-600);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.export-share-note {
+  margin: 15px 0 0;
+  color: var(--slate-500);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.export-share-actions {
+  padding-top: 2px;
 }
 
 .requirement-override-dialog {
@@ -4433,6 +4585,12 @@ button {
     width: 100%;
   }
 
+  .dashboard-hero-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .panel-heading-actions {
     width: 100%;
     align-items: stretch;
@@ -4764,9 +4922,15 @@ button {
 }
 
 @media (max-width: 680px) {
+  .export-share-dialog,
   .requirement-override-dialog {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
+  }
+
+  .export-share-dialog .course-edit-header,
+  .export-share-body {
+    padding-inline: 16px;
   }
 
   .requirement-override-form {

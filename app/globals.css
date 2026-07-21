@@ -3236,30 +3236,30 @@ button {
 
 .planner-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
-  align-items: start;
   gap: 16px;
 }
 
-.term-column {
+.term-row {
+  display: grid;
   overflow: hidden;
   border: 1px solid var(--slate-200);
   border-radius: var(--radius-lg);
   background: rgb(241 245 249 / 0.72);
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
 }
 
-.term-column-header {
+.term-row-header {
   display: flex;
-  min-height: 82px;
-  padding: 18px 18px 14px;
-  border-bottom: 1px solid var(--slate-200);
+  min-height: 214px;
+  padding: 18px;
+  border-right: 1px solid var(--slate-200);
   background: var(--white);
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: stretch;
+  flex-direction: column;
   gap: 12px;
 }
 
-.term-column-header span {
+.term-row-header span {
   color: var(--slate-400);
   font-size: 9px;
   font-weight: 800;
@@ -3267,13 +3267,14 @@ button {
   text-transform: uppercase;
 }
 
-.term-column-header h2 {
+.term-row-header h2 {
   margin: 3px 0 0;
   font-size: 17px;
   letter-spacing: -0.025em;
 }
 
-.term-column-header > strong {
+.term-row-header > strong {
+  width: fit-content;
   padding: 5px 7px;
   border-radius: 8px;
   background: var(--slate-100);
@@ -3283,8 +3284,13 @@ button {
 
 .term-courses {
   display: grid;
-  min-height: 94px;
+  overflow-x: auto;
+  min-width: 0;
+  min-height: 214px;
   padding: 12px;
+  align-items: stretch;
+  grid-auto-columns: minmax(240px, 280px);
+  grid-auto-flow: column;
   gap: 10px;
 }
 
@@ -3380,9 +3386,9 @@ button {
 
 .add-to-term {
   display: flex;
-  width: calc(100% - 24px);
+  width: 100%;
   min-height: 42px;
-  margin: 0 12px 12px;
+  margin-top: auto;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -4609,8 +4615,19 @@ button {
     margin-left: 47px;
   }
 
-  .planner-board {
+  .term-row {
     grid-template-columns: 1fr;
+  }
+
+  .term-row-header {
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--slate-200);
+  }
+
+  .term-courses {
+    min-height: 0;
+    grid-auto-columns: minmax(220px, 84vw);
   }
 
   .suggested-courses {

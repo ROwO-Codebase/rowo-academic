@@ -2861,8 +2861,12 @@ function PlannerPanel({
                 course.status === "planned" && course.term === term.label,
             );
             return (
-              <section className="term-column" key={term.id} aria-labelledby={"term-" + term.id}>
-                <div className="term-column-header">
+              <section
+                className="term-row"
+                key={term.id}
+                aria-labelledby={"term-" + term.id}
+              >
+                <div className="term-row-header">
                   <div>
                     <span>Term {termIndex + 1}</span>
                     <h2 id={"term-" + term.id}>{term.label}</h2>
@@ -2877,6 +2881,14 @@ function PlannerPanel({
                     )}{" "}
                     academic units
                   </strong>
+                  <button
+                    className="add-to-term"
+                    type="button"
+                    onClick={() => onAddToTerm(term.label)}
+                  >
+                    <span aria-hidden="true">＋</span>
+                    Add to {term.label}
+                  </button>
                 </div>
                 <div className="term-courses">
                   {courses.length === 0 && (
@@ -2942,14 +2954,6 @@ function PlannerPanel({
                     );
                   })}
                 </div>
-                <button
-                  className="add-to-term"
-                  type="button"
-                  onClick={() => onAddToTerm(term.label)}
-                >
-                  <span aria-hidden="true">＋</span>
-                  Add to {term.label}
-                </button>
               </section>
             );
           })}

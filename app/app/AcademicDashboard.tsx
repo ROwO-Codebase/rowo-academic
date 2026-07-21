@@ -1915,6 +1915,34 @@ function RequirementOverrideDialog({
 
 type ExportDialogMode = "schedule" | "progress";
 
+interface ShareLinkSummary {
+  id: string;
+  kind: ExportDialogMode;
+  includeGrades: boolean;
+  createdAt: number;
+  expiresAt: number | null;
+  revokedAt: number | null;
+  active: boolean;
+  url?: string;
+}
+
+function shareDateInput(daysFromToday: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromToday);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function shareLinkDate(value: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value));
+}
+
 function ExportShareDialog({
   mode,
   dashboard,
@@ -1931,12 +1959,71 @@ function ExportShareDialog({
   const [scheduleFormat, setScheduleFormat] = useState<"xlsx" | "pdf">("xlsx");
   const [includeGrades, setIncludeGrades] = useState(false);
   const [busyAction, setBusyAction] = useState<"download" | "share" | null>(null);
+  const [shareLinks, setShareLinks] = useState<ShareLinkSummary[]>([]);
+  const [linkLoadState, setLinkLoadState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [revokingLinkId, setRevokingLinkId] = useState<string | null>(null);
+  const [createdShareUrl, setCreatedShareUrl] = useState("");
+  const [noLinkExpiry, setNoLinkExpiry] = useState(false);
+  const [linkExpiryDate, setLinkExpiryDate] = useState(() => shareDateInput(7));
   const [errorMessage, setErrorMessage] = useState("");
+  const isSchedule = mode === "schedule";
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLinkLoadState("loading");
+    void requestJson<{ links: ShareLinkSummary[] }>(
+      "/api/shares?kind=" + mode,
+      { signal: controller.signal },
+    ).then((payload) => {
+      setShareLinks(payload.links);
+      setLinkLoadState("ready");
+    }).catch((error) => {
+      if (controller.signal.aborted) return;
+      setLinkLoadState("error");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Share links could not be loaded.",
+      );
+    });
+    return () => controller.abort();
+  }, [mode]);
+
+  function shareSnapshot() {
+    if (isSchedule) {
+      return {
+        courses: dashboard.courses.map((course) => ({
+          code: course.code,
+          title: course.title,
+          term: course.term,
+          status: course.status,
+          credits: course.credits,
+          grade: course.grade,
+        })),
+      };
+    }
+    return {
+      programs: dashboard.programs.map((program) => ({
+        title: program.profile.programTitle,
+        code: program.profile.programCode,
+        credential: program.profile.credential,
+        faculty: program.profile.faculty,
+        requirements: program.requirements.map((requirement) => ({
+          title: requirement.title,
+          status: requirement.status,
+          description: requirement.description,
+          evidence: requirement.evidence ?? [],
+          missing: requirement.missing ?? [],
+        })),
+      })),
+    };
+  }
 
   function generateExport() {
     const generatedAt = new Date();
@@ -2001,8 +2088,110 @@ function ExportShareDialog({
     }
   }
 
-  const busy = busyAction !== null;
-  const isSchedule = mode === "schedule";
+  async function copyShareLink(url: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = url;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand("copy");
+        textarea.remove();
+        if (!copied) throw new Error("Copy is unavailable in this browser.");
+      }
+      setNotice("Share link copied.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "The share link could not be copied.",
+      );
+    }
+  }
+
+  async function sharePublicLink(url: string) {
+    if (!navigator.share) {
+      await copyShareLink(url);
+      return;
+    }
+    try {
+      await navigator.share({
+        title: isSchedule ? "Course schedule" : "Plan progress",
+        text: "Shared from ROwO Academic",
+        url,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setErrorMessage(
+        error instanceof Error ? error.message : "The link could not be shared.",
+      );
+    }
+  }
+
+  async function createPublicLink() {
+    setCreatingLink(true);
+    setErrorMessage("");
+    try {
+      const expiresAt = noLinkExpiry
+        ? null
+        : new Date(linkExpiryDate + "T23:59:59.999").toISOString();
+      const payload = await requestJson<{ link: ShareLinkSummary & { url: string } }>(
+        "/api/shares",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            kind: mode,
+            includeGrades: isSchedule && includeGrades,
+            expiresAt,
+            snapshot: shareSnapshot(),
+          }),
+        },
+      );
+      setCreatedShareUrl(payload.link.url);
+      setShareLinks((current) => [payload.link, ...current]);
+      setNotice("Public share link created.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "The share link could not be created.",
+      );
+    } finally {
+      setCreatingLink(false);
+    }
+  }
+
+  async function revokePublicLink(link: ShareLinkSummary) {
+    if (!window.confirm("Invalidate this share link? Anyone using it will lose access immediately.")) {
+      return;
+    }
+    setRevokingLinkId(link.id);
+    setErrorMessage("");
+    try {
+      const payload = await requestJson<{ revoked: { id: string; revokedAt: number } }>(
+        "/api/shares/" + encodeURIComponent(link.id),
+        { method: "DELETE" },
+      );
+      setShareLinks((current) => current.map((item) =>
+        item.id === link.id
+          ? { ...item, active: false, revokedAt: payload.revoked.revokedAt }
+          : item));
+      if (link.url === createdShareUrl || link.id === shareLinks.find(
+        (item) => item.url === createdShareUrl,
+      )?.id) {
+        setCreatedShareUrl("");
+      }
+      setNotice("Share link invalidated.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "The share link could not be invalidated.",
+      );
+    } finally {
+      setRevokingLinkId(null);
+    }
+  }
+
+  const busy = busyAction !== null || creatingLink || revokingLinkId !== null;
 
   return (
     <dialog
@@ -2019,7 +2208,7 @@ function ExportShareDialog({
           <span>{isSchedule ? "Course schedule" : "Plan progress"}</span>
           <h2 id={titleId}>Export &amp; share</h2>
           <small>
-            Files are created on this device. Your plan and grades stay private.
+            Download a private file or create a revocable link for anyone to view.
           </small>
         </div>
         <button
@@ -2119,6 +2308,144 @@ function ExportShareDialog({
             {busyAction === "share" ? "Preparing…" : "Share file"}
           </button>
         </div>
+
+        <section className="export-link-section" aria-labelledby={titleId + "-link"}>
+          <div className="export-link-heading">
+            <div>
+              <span>Public URL</span>
+              <h3 id={titleId + "-link"}>Share with anyone who has the link</h3>
+              <p>
+                Creates a read-only snapshot. You can expire or invalidate every link.
+              </p>
+            </div>
+          </div>
+
+          <div className="export-link-expiry">
+            <label>
+              <span>Expires on</span>
+              <input
+                type="date"
+                min={shareDateInput(1)}
+                max={shareDateInput(365)}
+                value={linkExpiryDate}
+                disabled={busy || noLinkExpiry}
+                onChange={(event) => setLinkExpiryDate(event.target.value)}
+              />
+            </label>
+            <label className="export-no-expiry">
+              <input
+                type="checkbox"
+                checked={noLinkExpiry}
+                disabled={busy}
+                onChange={(event) => setNoLinkExpiry(event.target.checked)}
+              />
+              No expiry
+            </label>
+            <button
+              className="button button-primary button-compact"
+              type="button"
+              disabled={busy || (!noLinkExpiry && !linkExpiryDate)}
+              onClick={() => void createPublicLink()}
+            >
+              {creatingLink ? "Creating…" : "Create share link"}
+            </button>
+          </div>
+          {isSchedule && (
+            <p className="export-link-grade-note">
+              This link will {includeGrades ? "include" : "not include"} grades.
+            </p>
+          )}
+
+          {createdShareUrl && (
+            <div className="created-share-link" role="status">
+              <strong>Link ready</strong>
+              <div>
+                <input
+                  type="text"
+                  readOnly
+                  value={createdShareUrl}
+                  aria-label="New public share link"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button
+                  className="button button-secondary button-compact"
+                  type="button"
+                  onClick={() => void copyShareLink(createdShareUrl)}
+                >
+                  Copy
+                </button>
+                <button
+                  className="button button-secondary button-compact"
+                  type="button"
+                  onClick={() => void sharePublicLink(createdShareUrl)}
+                >
+                  Share link
+                </button>
+              </div>
+              <small>
+                Save this URL now. For security, ROwO stores only a hash and cannot
+                show the full URL again later.
+              </small>
+            </div>
+          )}
+
+          <div className="share-link-management">
+            <div className="share-link-management-heading">
+              <strong>Your links</strong>
+              <span>Newest first</span>
+            </div>
+            {linkLoadState === "loading" && (
+              <p className="share-link-list-state">Loading links…</p>
+            )}
+            {linkLoadState === "error" && (
+              <p className="share-link-list-state">Links could not be loaded.</p>
+            )}
+            {linkLoadState === "ready" && shareLinks.length === 0 && (
+              <p className="share-link-list-state">No links created yet.</p>
+            )}
+            {shareLinks.length > 0 && (
+              <ul className="share-link-list">
+                {shareLinks.slice(0, 8).map((link) => {
+                  const state = link.revokedAt !== null
+                    ? "Revoked"
+                    : link.active
+                      ? "Active"
+                      : "Expired";
+                  return (
+                    <li key={link.id}>
+                      <div>
+                        <strong>
+                          {link.kind === "schedule" ? "Course schedule" : "Plan progress"}
+                          {link.kind === "schedule"
+                            ? link.includeGrades ? " · grades included" : " · no grades"
+                            : ""}
+                        </strong>
+                        <small>
+                          Created {shareLinkDate(link.createdAt)}
+                          {link.expiresAt
+                            ? " · Expires " + shareLinkDate(link.expiresAt)
+                            : " · No expiry"}
+                        </small>
+                      </div>
+                      <span className={`share-link-state ${state.toLowerCase()}`}>
+                        {state}
+                      </span>
+                      {link.active && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void revokePublicLink(link)}
+                        >
+                          {revokingLinkId === link.id ? "Invalidating…" : "Invalidate"}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
       </div>
     </dialog>
   );

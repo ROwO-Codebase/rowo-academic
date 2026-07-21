@@ -26,6 +26,9 @@ export const REQUIREMENT_OVERRIDE_REFERENCE_TYPES = ["course", "program"] as con
 export type RequirementOverrideReferenceType =
   (typeof REQUIREMENT_OVERRIDE_REFERENCE_TYPES)[number];
 
+export const SHARE_LINK_KINDS = ["schedule", "progress"] as const;
+export type ShareLinkKind = (typeof SHARE_LINK_KINDS)[number];
+
 /**
  * Local application users. `rowo_user_id` is the stable identity returned by
  * ROwO; the upstream ROwO session token is deliberately never persisted.
@@ -79,6 +82,58 @@ export const sessions = sqliteTable(
       sql`length(${table.tokenHash}) = 64 and ${table.tokenHash} not glob '*[^0-9a-f]*'`,
     ),
     check("sessions_expiry_after_creation", sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
+/**
+ * Revocable public snapshots. Only a SHA-256 digest of the capability token is
+ * stored, so a database read does not reveal active share URLs.
+ */
+export const shareLinks = sqliteTable(
+  "share_links",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    kind: text("kind", { enum: SHARE_LINK_KINDS }).notNull(),
+    includeGrades: integer("include_grades", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    payload: text("payload").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at"),
+    revokedAt: integer("revoked_at"),
+  },
+  (table) => [
+    uniqueIndex("share_links_token_hash_uq").on(table.tokenHash),
+    index("share_links_user_created_idx").on(table.userId, table.createdAt),
+    index("share_links_expires_at_idx").on(table.expiresAt),
+    check(
+      "share_links_token_hash_shape",
+      sql`length(${table.tokenHash}) = 64 and ${table.tokenHash} not glob '*[^0-9a-f]*'`,
+    ),
+    check(
+      "share_links_kind_valid",
+      sql`${table.kind} in ('schedule', 'progress')`,
+    ),
+    check(
+      "share_links_grades_schedule_only",
+      sql`${table.includeGrades} = 0 or ${table.kind} = 'schedule'`,
+    ),
+    check(
+      "share_links_payload_size",
+      sql`length(${table.payload}) between 2 and 262144`,
+    ),
+    check(
+      "share_links_expiry_after_creation",
+      sql`${table.expiresAt} is null or ${table.expiresAt} > ${table.createdAt}`,
+    ),
+    check(
+      "share_links_revocation_after_creation",
+      sql`${table.revokedAt} is null or ${table.revokedAt} >= ${table.createdAt}`,
+    ),
   ],
 );
 

@@ -167,6 +167,48 @@ test("exports and shares private schedule and progress files from the active das
   assert.match(exportsSource, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
 });
 
+test("creates expiring public plan snapshots and lets only the owner revoke them", async () => {
+  const [
+    dashboard,
+    createRoute,
+    revokeRoute,
+    publicRoute,
+    publicPage,
+    publicView,
+    schema,
+    migration,
+  ] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/api/shares/route.ts"),
+    source("app/api/shares/[id]/route.ts"),
+    source("app/api/public/shares/[token]/route.ts"),
+    source("app/share/[token]/page.tsx"),
+    source("app/share/[token]/SharedPlanView.tsx"),
+    source("db/schema.ts"),
+    source("drizzle/0002_spotty_edwin_jarvis.sql"),
+  ]);
+
+  assert.match(dashboard, /Create share link/);
+  assert.match(dashboard, /No expiry/);
+  assert.match(dashboard, /Invalidate this share link/);
+  assert.match(dashboard, /For security, ROwO stores only a hash/);
+  assert.match(createRoute, /getLocalSession/);
+  assert.match(createRoute, /isSameOriginMutation/);
+  assert.match(createRoute, /parseShareCreateInput/);
+  assert.match(revokeRoute, /eq\(shareLinks\.userId, session\.user\.localId\)/);
+  assert.match(publicRoute, /hashShareToken\(token\)/);
+  assert.match(publicRoute, /LINK_EXPIRED/);
+  assert.match(publicRoute, /LINK_REVOKED/);
+  assert.doesNotMatch(publicRoute, /getLocalSession/);
+  assert.match(publicPage, /index: false/);
+  assert.match(publicView, /Read-only snapshot/);
+  assert.match(publicView, /Grades not shared/);
+  assert.match(schema, /share_links_token_hash_uq/);
+  assert.match(schema, /share_links_grades_schedule_only/);
+  assert.match(migration, /CREATE TABLE `share_links`/);
+  assert.doesNotMatch(migration, /\btoken\b(?!_hash)/);
+});
+
 test("renders actual requirement AST nodes as cascaded linked detail trees", async () => {
   const [summary, tree, anchors, browser, dashboard, styles] = await Promise.all([
     source("lib/public-academic.ts"),

@@ -36,6 +36,14 @@ import type {
 } from "@/lib/types";
 
 const MAX_RECOMMENDATIONS = 12;
+type DashboardDataScope = "overview" | "progress" | "planner";
+
+function dashboardDataScope(request: Request): DashboardDataScope {
+  const requested = new URL(request.url).searchParams.get("tab");
+  return requested === "progress" || requested === "planner"
+    ? requested
+    : "overview";
+}
 
 function errorResponse(code: string, message: string, status: number) {
   return Response.json(
@@ -139,9 +147,36 @@ export async function GET(request: Request) {
       return errorResponse("UNAUTHENTICATED", "Sign in with ROwO to continue.", 401);
     }
 
+    const scope = dashboardDataScope(request);
     const db = getUserDb();
-    const [programRows, records, overrideRows, overrideReferenceJoinRows] =
-      await Promise.all([
+    const overridesPromise = scope === "overview"
+      ? Promise.resolve({
+          overrides: [] as Array<typeof requirementNodeOverrides.$inferSelect>,
+          references: [] as Array<
+            typeof requirementNodeOverrideReferences.$inferSelect
+          >,
+        })
+      : Promise.all([
+          db
+            .select()
+            .from(requirementNodeOverrides)
+            .where(eq(requirementNodeOverrides.userId, session.user.localId)),
+          db
+            .select({ reference: requirementNodeOverrideReferences })
+            .from(requirementNodeOverrideReferences)
+            .innerJoin(
+              requirementNodeOverrides,
+              eq(
+                requirementNodeOverrideReferences.overrideId,
+                requirementNodeOverrides.id,
+              ),
+            )
+            .where(eq(requirementNodeOverrides.userId, session.user.localId)),
+        ]).then(([overrides, referenceRows]) => ({
+          overrides,
+          references: referenceRows.map((row) => row.reference),
+        }));
+    const [programRows, records, overrideData] = await Promise.all([
       db
         .select()
         .from(userPrograms)
@@ -152,25 +187,10 @@ export async function GET(request: Request) {
         .from(courseRecords)
         .where(eq(courseRecords.userId, session.user.localId))
         .orderBy(desc(courseRecords.updatedAt)),
-      db
-        .select()
-        .from(requirementNodeOverrides)
-        .where(eq(requirementNodeOverrides.userId, session.user.localId)),
-      db
-        .select({ reference: requirementNodeOverrideReferences })
-        .from(requirementNodeOverrideReferences)
-        .innerJoin(
-          requirementNodeOverrides,
-          eq(
-            requirementNodeOverrideReferences.overrideId,
-            requirementNodeOverrides.id,
-          ),
-        )
-        .where(eq(requirementNodeOverrides.userId, session.user.localId)),
+      overridesPromise,
     ]);
-    const overrideReferenceRows = overrideReferenceJoinRows.map(
-      (row) => row.reference,
-    );
+    const overrideRows = overrideData.overrides;
+    const overrideReferenceRows = overrideData.references;
     const referencesByOverride = new Map<
       string,
       typeof overrideReferenceRows
@@ -206,6 +226,16 @@ export async function GET(request: Request) {
         }
 
         const program = hydratedPrograms[index]?.catalog ?? null;
+        if (scope === "overview") {
+          return {
+            saved: publicProgram(savedProgram),
+            catalog: program,
+            calendarMismatch: false,
+            requirementAnalysis: null,
+            recommendations: [],
+          };
+        }
+
         const documents = await getProgramRequirementDocuments(
           academicEnv,
           savedProgram.programPid,
@@ -265,20 +295,26 @@ export async function GET(request: Request) {
           context,
           { nodeOverrides },
         );
-        const unmetCodes = new Set(collectUnmetCourseCodes(requirementAnalysis));
-        const documentStates = new Map(
-          requirementAnalysis.documents.map((document) => [
-            document.documentId,
-            document.state,
-          ]),
-        );
-        const recommendations = extractCourseRecommendations(documents, context)
-          .filter(
-            (reference) =>
-              unmetCodes.has(reference.courseCode) &&
-              documentStates.get(reference.documentId) !== "MET",
-          )
-          .slice(0, MAX_RECOMMENDATIONS);
+        const recommendations = scope === "planner"
+          ? (() => {
+              const unmetCodes = new Set(
+                collectUnmetCourseCodes(requirementAnalysis),
+              );
+              const documentStates = new Map(
+                requirementAnalysis.documents.map((document) => [
+                  document.documentId,
+                  document.state,
+                ]),
+              );
+              return extractCourseRecommendations(documents, context)
+                .filter(
+                  (reference) =>
+                    unmetCodes.has(reference.courseCode) &&
+                    documentStates.get(reference.documentId) !== "MET",
+                )
+                .slice(0, MAX_RECOMMENDATIONS);
+            })()
+          : [];
 
         return {
           saved: publicProgram(savedProgram),
@@ -362,6 +398,7 @@ export async function GET(request: Request) {
     return Response.json(
       {
         success: true,
+        dataScope: scope,
         user: {
           id: session.user.id,
           username: session.user.username,
@@ -373,14 +410,21 @@ export async function GET(request: Request) {
           catalog: catalogProgram,
           calendarMismatch,
         },
-        programs: programProgress.map(({ recommendations: _recommendations, ...progress }) => {
-          void _recommendations;
-          return progress;
-        }),
+        programs: programProgress.map(
+          ({ recommendations: _recommendations, ...progress }) => {
+            void _recommendations;
+            return {
+              ...progress,
+              requirementAnalysis:
+                scope === "progress" ? progress.requirementAnalysis : null,
+            };
+          },
+        ),
         courseRecords: records.map(publicCourse),
         calendar,
-        requirementAnalysis,
-        recommendedUnmetCourseReferences: recommendations,
+        requirementAnalysis: scope === "progress" ? requirementAnalysis : null,
+        recommendedUnmetCourseReferences:
+          scope === "planner" ? recommendations : [],
         terms: groupByTerm(records),
         progress: {
           statusCounts,

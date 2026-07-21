@@ -40,6 +40,7 @@ import type {
 } from "@/lib/types";
 
 type TabId = "overview" | "progress" | "planner" | "catalog";
+type DashboardDataScope = "overview" | "progress" | "planner";
 type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
 type RequirementStatus = "met" | "planned" | "not_met" | "unknown";
 type EligibilityStatus = "eligible" | "provisional" | "blocked" | "unknown";
@@ -67,9 +68,9 @@ interface DashboardSummary {
   requiredUnits: number | null;
   overallAverage?: number | null;
   majorAverage?: number | null;
-  requirementsMet: number;
-  requirementsTotal: number;
-  requirementsUnknown: number;
+  requirementsMet: number | null;
+  requirementsTotal: number | null;
+  requirementsUnknown: number | null;
 }
 
 interface DashboardCourse {
@@ -263,6 +264,7 @@ interface ApiProgramProgress {
 }
 
 interface ApiDashboardPayload {
+  dataScope?: DashboardDataScope;
   user: DashboardUser;
   program: {
     selected: ApiSavedProgram | null;
@@ -701,9 +703,11 @@ function normalizeDashboardPayload(
               requiredUnits: null,
               overallAverage: weightedAverage(records),
               majorAverage: null,
-              requirementsMet: program.requirementAnalysis?.metCount ?? 0,
-              requirementsTotal: program.requirementAnalysis?.documents.length ?? 0,
-              requirementsUnknown: program.requirementAnalysis?.unknownCount ?? 0,
+              requirementsMet: program.requirementAnalysis?.metCount ?? null,
+              requirementsTotal:
+                program.requirementAnalysis?.documents.length ?? null,
+              requirementsUnknown:
+                program.requirementAnalysis?.unknownCount ?? null,
             },
         requirements: programRequirements,
         calendarMismatch: program.calendarMismatch,
@@ -756,9 +760,9 @@ function normalizeDashboardPayload(
           requiredUnits: null,
           overallAverage: weightedAverage(records),
           majorAverage: null,
-          requirementsMet: analysis?.metCount ?? 0,
-          requirementsTotal: analysis?.documents.length ?? 0,
-          requirementsUnknown: analysis?.unknownCount ?? 0,
+          requirementsMet: analysis?.metCount ?? null,
+          requirementsTotal: analysis?.documents.length ?? null,
+          requirementsUnknown: analysis?.unknownCount ?? null,
         }
       : null,
     courses: dashboardCourses,
@@ -770,6 +774,35 @@ function normalizeDashboardPayload(
         right.planCount - left.planCount ||
         left.courseCode.localeCompare(right.courseCode),
     ),
+  };
+}
+
+function mergeDashboardScope(
+  current: DashboardPayload | null,
+  incoming: DashboardPayload,
+  scope: DashboardDataScope,
+): DashboardPayload {
+  if (!current || scope === "overview") return incoming;
+  if (scope === "progress") {
+    return {
+      ...incoming,
+      suggestions: current.suggestions,
+    };
+  }
+
+  const summary = incoming.summary && current.summary
+    ? {
+        ...incoming.summary,
+        requirementsMet: current.summary.requirementsMet,
+        requirementsTotal: current.summary.requirementsTotal,
+        requirementsUnknown: current.summary.requirementsUnknown,
+      }
+    : incoming.summary;
+  return {
+    ...incoming,
+    summary,
+    requirements: current.requirements,
+    programs: current.programs,
   };
 }
 
@@ -911,6 +944,37 @@ function AppLoading() {
         <div className="skeleton skeleton-card" />
       </div>
       <span className="sr-only">Loading your academic plan</span>
+    </div>
+  );
+}
+
+function DeferredTabLoading({ label }: { label: string }) {
+  return (
+    <div className="dashboard-panel">
+      <div className="inline-loading" role="status" aria-live="polite">
+        <span className="spinner" aria-hidden="true" />
+        Loading {label.toLowerCase()} data…
+      </div>
+    </div>
+  );
+}
+
+function DeferredTabError({
+  label,
+  message,
+  onRetry,
+}: {
+  label: string;
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="dashboard-panel">
+      <div className="inline-error" role="alert">
+        <strong>{label} data did not load.</strong>
+        <span>{message}</span>
+        <button type="button" onClick={onRetry}>Try again</button>
+      </div>
     </div>
   );
 }
@@ -2022,10 +2086,14 @@ function OverviewPanel({
                     : formatUnits(projectedUnits) + " academic units"}
                 </strong>
               </span>
-              <span>
-                {summary.requirementsMet} of {summary.requirementsTotal} requirement
-                groups met
-              </span>
+              {summary.requirementsTotal === null ? (
+                <span>Open Progress to evaluate requirement groups</span>
+              ) : (
+                <span>
+                  {summary.requirementsMet ?? 0} of {summary.requirementsTotal}{" "}
+                  requirement groups met
+                </span>
+              )}
             </div>
           </section>
 
@@ -2046,8 +2114,16 @@ function OverviewPanel({
             />
             <SummaryMetric
               label="Needs review"
-              value={String(summary.requirementsUnknown)}
-              note="Rules or records with uncertainty"
+              value={
+                summary.requirementsUnknown === null
+                  ? "—"
+                  : String(summary.requirementsUnknown)
+              }
+              note={
+                summary.requirementsUnknown === null
+                  ? "Calculated when Progress opens"
+                  : "Rules or records with uncertainty"
+              }
             />
           </section>
         </>
@@ -2491,15 +2567,15 @@ function ProgressPanel({
                   {program.summary && (
                     <div className="program-progress-metrics" aria-label="Plan progress summary">
                       <span>
-                        <strong>{program.summary.requirementsMet}</strong>
+                        <strong>{program.summary.requirementsMet ?? "—"}</strong>
                         requirements met
                       </span>
                       <span>
-                        <strong>{program.summary.requirementsTotal}</strong>
+                        <strong>{program.summary.requirementsTotal ?? "—"}</strong>
                         evaluated
                       </span>
                       <span>
-                        <strong>{program.summary.requirementsUnknown}</strong>
+                        <strong>{program.summary.requirementsUnknown ?? "—"}</strong>
                         need review
                       </span>
                     </div>
@@ -2639,8 +2715,16 @@ function PlannerPanel({
   const plannedCourseCount = dashboard.courses.filter(
     (course) => course.status === "planned",
   ).length;
+  const plannedCourseKey = useMemo(
+    () => dashboard.courses
+      .filter((course) => course.status === "planned")
+      .map((course) => `${course.id}:${course.term}`)
+      .sort()
+      .join("|"),
+    [dashboard.courses],
+  );
 
-  async function checkEligibility() {
+  const checkEligibility = useCallback(async (announce = true) => {
     setEligibilityCheckState("checking");
     try {
       const response = await requestJson<ApiPlannerEligibilityPayload>(
@@ -2649,13 +2733,15 @@ function PlannerPanel({
       setEligibilityResults(
         new Map(response.results.map((result) => [result.courseId, result])),
       );
-      setNotice(
-        response.results.length === 1
-          ? "Eligibility checked for 1 planned course."
-          : "Eligibility checked for " +
-            response.results.length +
-            " planned courses.",
-      );
+      if (announce) {
+        setNotice(
+          response.results.length === 1
+            ? "Eligibility checked for 1 planned course."
+            : "Eligibility checked for " +
+              response.results.length +
+              " planned courses.",
+        );
+      }
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -2665,7 +2751,15 @@ function PlannerPanel({
     } finally {
       setEligibilityCheckState("idle");
     }
-  }
+  }, [setNotice]);
+
+  useEffect(() => {
+    if (!plannedCourseKey) {
+      setEligibilityResults(new Map());
+      return;
+    }
+    void checkEligibility(false);
+  }, [checkEligibility, plannedCourseKey]);
 
   function checkedEligibilityStatus(
     result: ApiPlannerEligibilityResult,
@@ -2732,7 +2826,7 @@ function PlannerPanel({
             disabled={
               plannedCourseCount === 0 || eligibilityCheckState === "checking"
             }
-            onClick={() => void checkEligibility()}
+            onClick={() => void checkEligibility(true)}
           >
             {eligibilityCheckState === "checking"
               ? "Checking eligibility…"
@@ -3355,6 +3449,12 @@ export function AcademicDashboard({
   const [loadState, setLoadState] = useState<
     "loading" | "ready" | "error" | "guest"
   >("loading");
+  const [tabLoadStates, setTabLoadStates] = useState<
+    Record<"progress" | "planner", "idle" | "loading" | "ready" | "error">
+  >({ progress: "idle", planner: "idle" });
+  const [tabLoadErrors, setTabLoadErrors] = useState<
+    Record<"progress" | "planner", string>
+  >({ progress: "", planner: "" });
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
@@ -3363,33 +3463,106 @@ export function AcademicDashboard({
   const [catalogInitialTerm, setCatalogInitialTerm] = useState("");
   const [catalogInitialStatus, setCatalogInitialStatus] =
     useState<CourseStatus>("completed");
+  const scopeRequestIds = useRef<Record<DashboardDataScope, number>>({
+    overview: 0,
+    progress: 0,
+    planner: 0,
+  });
 
-  const loadDashboard = useCallback(async () => {
-    setLoadError("");
+  const loadDashboardScope = useCallback(async (scope: DashboardDataScope) => {
+    const requestId = ++scopeRequestIds.current[scope];
+    if (scope === "overview") {
+      setLoadError("");
+    } else {
+      setTabLoadErrors((current) => ({ ...current, [scope]: "" }));
+      setTabLoadStates((current) => ({ ...current, [scope]: "loading" }));
+    }
     try {
       const payload = await requestJson<DashboardPayload | ApiDashboardPayload>(
-        "/api/dashboard",
+        "/api/dashboard?tab=" + scope,
       );
-      setDashboard(normalizeDashboardPayload(payload));
-      setLoadState("ready");
+      if (scopeRequestIds.current[scope] !== requestId) return;
+      const normalized = normalizeDashboardPayload(payload);
+      setDashboard((current) => mergeDashboardScope(current, normalized, scope));
+      if (scope === "overview") {
+        setLoadState("ready");
+      } else {
+        setTabLoadStates((current) => ({ ...current, [scope]: "ready" }));
+      }
     } catch (error) {
+      if (scopeRequestIds.current[scope] !== requestId) return;
       if (error instanceof ApiError && error.status === 401) {
         setLoadState("guest");
         return;
       }
-      setLoadError(
-        error instanceof Error ? error.message : "Your plan could not be loaded.",
-      );
-      setLoadState("error");
+      const message = error instanceof Error
+        ? error.message
+        : "Your plan could not be loaded.";
+      if (scope === "overview") {
+        setLoadError(message);
+        setLoadState("error");
+      } else {
+        setTabLoadErrors((current) => ({ ...current, [scope]: message }));
+        setTabLoadStates((current) => ({ ...current, [scope]: "error" }));
+      }
     }
   }, []);
 
+  const reloadOverview = useCallback(async () => {
+    scopeRequestIds.current.progress += 1;
+    scopeRequestIds.current.planner += 1;
+    setTabLoadStates({ progress: "idle", planner: "idle" });
+    setTabLoadErrors({ progress: "", planner: "" });
+    await loadDashboardScope("overview");
+  }, [loadDashboardScope]);
+
+  const reloadProgress = useCallback(async () => {
+    scopeRequestIds.current.planner += 1;
+    setTabLoadStates((current) => ({
+      ...current,
+      planner: "idle",
+    }));
+    setDashboard((current) => current
+      ? { ...current, suggestions: [] }
+      : current);
+    await loadDashboardScope("progress");
+  }, [loadDashboardScope]);
+
+  const reloadPlanner = useCallback(async () => {
+    scopeRequestIds.current.progress += 1;
+    setTabLoadStates((current) => ({
+      ...current,
+      progress: "idle",
+    }));
+    await loadDashboardScope("planner");
+  }, [loadDashboardScope]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadDashboard();
+      void loadDashboardScope("overview");
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadDashboard]);
+  }, [loadDashboardScope]);
+
+  useEffect(() => {
+    if (
+      loadState !== "ready" ||
+      !dashboard?.profile ||
+      dashboard.calendarMismatch ||
+      (activeTab !== "progress" && activeTab !== "planner") ||
+      tabLoadStates[activeTab] !== "idle"
+    ) {
+      return;
+    }
+    void loadDashboardScope(activeTab);
+  }, [
+    activeTab,
+    dashboard?.calendarMismatch,
+    dashboard?.profile,
+    loadDashboardScope,
+    loadState,
+    tabLoadStates,
+  ]);
 
   useEffect(() => {
     if (!notice) return;
@@ -3446,7 +3619,7 @@ export function AcademicDashboard({
             message={loadError}
             onRetry={() => {
               setLoadState("loading");
-              void loadDashboard();
+              void loadDashboardScope("overview");
             }}
           />
         </main>
@@ -3467,7 +3640,7 @@ export function AcademicDashboard({
                 }
               : null
           }
-          onComplete={loadDashboard}
+          onComplete={reloadOverview}
         />
       )}
       {loadState === "ready" &&
@@ -3485,30 +3658,58 @@ export function AcademicDashboard({
               <OverviewPanel
                 dashboard={dashboard}
                 onOpenCatalog={() => openCatalog("completed", "")}
-                onReload={loadDashboard}
+                onReload={reloadOverview}
                 busyCourseId={busyCourseId}
                 setBusyCourseId={setBusyCourseId}
                 setNotice={setNotice}
               />
             )}
-            {activeTab === "progress" && (
+            {activeTab === "progress" &&
+              tabLoadStates.progress === "ready" && (
               <ProgressPanel
                 dashboard={dashboard}
-                onReload={loadDashboard}
+                onReload={reloadProgress}
                 setNotice={setNotice}
               />
             )}
-            {activeTab === "planner" && (
+            {activeTab === "progress" &&
+              (tabLoadStates.progress === "idle" ||
+                tabLoadStates.progress === "loading") && (
+              <DeferredTabLoading label="Progress" />
+            )}
+            {activeTab === "progress" &&
+              tabLoadStates.progress === "error" && (
+              <DeferredTabError
+                label="Progress"
+                message={tabLoadErrors.progress}
+                onRetry={() => void loadDashboardScope("progress")}
+              />
+            )}
+            {activeTab === "planner" &&
+              tabLoadStates.planner === "ready" && (
               <PlannerPanel
                 dashboard={dashboard}
                 onAddToTerm={(term) => openCatalog("planned", term)}
                 onReviewSuggestion={(courseCode, term) =>
                   openCatalog("planned", term, courseCode)
                 }
-                onReload={loadDashboard}
+                onReload={reloadPlanner}
                 busyCourseId={busyCourseId}
                 setBusyCourseId={setBusyCourseId}
                 setNotice={setNotice}
+              />
+            )}
+            {activeTab === "planner" &&
+              (tabLoadStates.planner === "idle" ||
+                tabLoadStates.planner === "loading") && (
+              <DeferredTabLoading label="Planner" />
+            )}
+            {activeTab === "planner" &&
+              tabLoadStates.planner === "error" && (
+              <DeferredTabError
+                label="Planner"
+                message={tabLoadErrors.planner}
+                onRetry={() => void loadDashboardScope("planner")}
               />
             )}
             {activeTab === "catalog" && (
@@ -3527,7 +3728,7 @@ export function AcademicDashboard({
                 initialProgramPid={initialProgramPid}
                 initialTerm={catalogInitialTerm}
                 initialStatus={catalogInitialStatus}
-                onAdded={loadDashboard}
+                onAdded={reloadOverview}
                 setNotice={setNotice}
               />
             )}

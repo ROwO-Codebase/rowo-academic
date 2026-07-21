@@ -126,6 +126,30 @@ test("checks every planned course against strictly earlier planner terms", async
   assert.match(courseRecords, /candidateSequence < targetSequence/);
 });
 
+test("loads dashboard data by active tab and checks planner eligibility on entry", async () => {
+  const [dashboardRoute, dashboard] = await Promise.all([
+    source("app/api/dashboard/route.ts"),
+    source("app/app/AcademicDashboard.tsx"),
+  ]);
+
+  assert.match(dashboardRoute, /function dashboardDataScope/);
+  assert.match(dashboardRoute, /scope === "overview"/);
+  assert.match(dashboardRoute, /scope === "progress"/);
+  assert.match(dashboardRoute, /scope === "planner"/);
+  assert.match(
+    dashboardRoute,
+    /scope === "progress" \? progress\.requirementAnalysis : null/,
+  );
+  assert.match(
+    dashboardRoute,
+    /scope === "planner" \? recommendations : \[\]/,
+  );
+  assert.match(dashboard, /"\/api\/dashboard\?tab=" \+ scope/);
+  assert.match(dashboard, /tabLoadStates\[activeTab\] !== "idle"/);
+  assert.match(dashboard, /void loadDashboardScope\(activeTab\)/);
+  assert.match(dashboard, /void checkEligibility\(false\)/);
+});
+
 test("renders actual requirement AST nodes as cascaded linked detail trees", async () => {
   const [summary, tree, anchors, browser, dashboard, styles] = await Promise.all([
     source("lib/public-academic.ts"),

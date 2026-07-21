@@ -129,8 +129,9 @@ After the one-time bootstrap, Cloudflare Workers Builds is the intended ongoing
 CD path. GitHub Actions remains CI-only. Protecting `main` and requiring the CI
 check will ensure tests pass before Cloudflare sees a production commit. D1
 migrations run against the app-owned database by its explicit database name
-before the Worker deploy step. The first production Worker version and its
-app-owned D1 schema were bootstrapped with Wrangler.
+before the Worker deploy step. The `prebuild` lifecycle runs ESLint before
+`npm run build` produces deployable output. The first production Worker version
+and its app-owned D1 schema were bootstrapped with Wrangler.
 
 See [docs/cloudflare-setup.md](docs/cloudflare-setup.md) for D1 provisioning,
 least-privilege tokens, GitHub integration, Workers Builds commands, custom

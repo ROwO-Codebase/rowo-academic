@@ -1978,21 +1978,26 @@ function ExportShareDialog({
 
   useEffect(() => {
     const controller = new AbortController();
-    setLinkLoadState("loading");
-    void requestJson<{ links: ShareLinkSummary[] }>(
-      "/api/shares?kind=" + mode,
-      { signal: controller.signal },
-    ).then((payload) => {
-      setShareLinks(payload.links);
-      setLinkLoadState("ready");
-    }).catch((error) => {
-      if (controller.signal.aborted) return;
-      setLinkLoadState("error");
-      setErrorMessage(
-        error instanceof Error ? error.message : "Share links could not be loaded.",
-      );
-    });
-    return () => controller.abort();
+    const timer = window.setTimeout(() => {
+      setLinkLoadState("loading");
+      void requestJson<{ links: ShareLinkSummary[] }>(
+        "/api/shares?kind=" + mode,
+        { signal: controller.signal },
+      ).then((payload) => {
+        setShareLinks(payload.links);
+        setLinkLoadState("ready");
+      }).catch((error) => {
+        if (controller.signal.aborted) return;
+        setLinkLoadState("error");
+        setErrorMessage(
+          error instanceof Error ? error.message : "Share links could not be loaded.",
+        );
+      });
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [mode]);
 
   function shareSnapshot() {
@@ -3315,11 +3320,14 @@ function PlannerPanel({
   }, [setNotice]);
 
   useEffect(() => {
-    if (!plannedCourseKey) {
-      setEligibilityResults(new Map());
-      return;
-    }
-    void checkEligibility(false);
+    const timer = window.setTimeout(() => {
+      if (!plannedCourseKey) {
+        setEligibilityResults(new Map());
+        return;
+      }
+      void checkEligibility(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [checkEligibility, plannedCourseKey]);
 
   function checkedEligibilityStatus(
@@ -4116,7 +4124,10 @@ export function AcademicDashboard({
     ) {
       return;
     }
-    void loadDashboardScope(activeTab);
+    const timer = window.setTimeout(() => {
+      void loadDashboardScope(activeTab);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [
     activeTab,
     dashboard?.calendarMismatch,

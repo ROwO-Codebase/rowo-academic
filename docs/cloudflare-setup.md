@@ -171,6 +171,8 @@ npx wrangler d1 migrations apply rowo-academic-users-staging --remote --env stag
 Vite resolves the Cloudflare environment while building and writes a flattened
 deployment configuration. Setting `CLOUDFLARE_ENV` on the build is therefore
 required; adding only `--env` to a later Wrangler deploy is not sufficient.
+The `prebuild` lifecycle runs ESLint before `npm run build` creates deployable
+output, so a lint failure stops Workers Builds before migrations or deployment.
 
 Branch preview versions may share the staging D1 bindings and SSO callback
 configuration. Leave them disabled until shared staging state and preview-host

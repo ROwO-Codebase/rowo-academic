@@ -308,6 +308,7 @@ export interface RequirementNodeEvaluation {
   presentation: RequirementNodePresentation;
   state: TriState;
   automaticState: TriState;
+  plannedCompletion: boolean;
   provisionalState?: TriState;
   reason: string;
   referenceEvaluations: RequirementReferenceEvaluation[];
@@ -339,6 +340,7 @@ export interface RequirementDocumentEvaluation {
   parseStatus: RequirementParseStatus;
   state: TriState;
   computedState: TriState;
+  plannedCompletion: boolean;
   reason: string;
   root: RequirementNodeEvaluation | null;
   warnings: string[];

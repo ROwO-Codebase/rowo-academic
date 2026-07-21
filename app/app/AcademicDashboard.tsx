@@ -41,7 +41,7 @@ import type {
 
 type TabId = "overview" | "progress" | "planner" | "catalog";
 type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
-type RequirementStatus = "met" | "not_met" | "unknown";
+type RequirementStatus = "met" | "planned" | "not_met" | "unknown";
 type EligibilityStatus = "eligible" | "provisional" | "blocked" | "unknown";
 
 interface DashboardUser {
@@ -232,6 +232,7 @@ interface ApiRequirementDocumentEvaluation {
   parseStatus: string;
   state: "MET" | "NOT_MET" | "UNKNOWN";
   computedState: "MET" | "NOT_MET" | "UNKNOWN";
+  plannedCompletion?: boolean;
   reason: string;
   root: ApiRequirementNodeEvaluation | null;
   warnings: string[];
@@ -360,6 +361,7 @@ const requirementMeta: Record<
   { label: string; symbol: string }
 > = {
   met: { label: "Requirement met", symbol: "✓" },
+  planned: { label: "On track with plan", symbol: "↗" },
   not_met: { label: "Not met", symbol: "!" },
   unknown: { label: "Needs review", symbol: "?" },
 };
@@ -534,7 +536,9 @@ function normalizeRequirements(
         document.requirementKind || document.sourceField,
       ),
       description: document.reason,
-      status: mapTriState(document.state),
+      status: document.plannedCompletion
+        ? "planned"
+        : mapTriState(document.state),
       evidence: matched,
       missing: unmet,
       note: unknownReasons[0] || document.warnings[0] || null,

@@ -2919,6 +2919,12 @@ button {
   color: var(--emerald-700);
 }
 
+.requirement-symbol.planned,
+.requirement-state.planned {
+  background: var(--indigo-50);
+  color: var(--indigo-700);
+}
+
 .requirement-symbol.not_met,
 .requirement-state.not_met {
   background: var(--rose-100);

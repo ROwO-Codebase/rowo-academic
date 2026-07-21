@@ -235,11 +235,22 @@ test("uses a pencil for planned and in-progress required courses in Progress", a
   assert.match(tree, /courseActivity \? "✎"/);
   assert.match(tree, /Course in progress/);
   assert.match(tree, /Course planned/);
+  assert.match(tree, /plannedCompletion/);
+  assert.match(tree, /Planned courses will satisfy this requirement/);
   assert.match(dashboard, /showCourseActivity/);
+  assert.match(dashboard, /document\.plannedCompletion/);
   assert.match(evaluator, /pendingCourseActivity/);
+  assert.match(evaluator, /attachPlannedCompletion/);
   assert.match(styles, /\.state-course-activity/);
+  assert.match(styles, /\.requirement-symbol\.planned/);
   assert.match(styles, /\.leaf-state-in_progress/);
   assert.match(styles, /\.leaf-state-planned/);
+});
+
+test("shows planned completion in signed-in course requirement ASTs", async () => {
+  const browser = await source("components/GuestAcademicExplorer.tsx");
+
+  assert.match(browser, /showCourseActivity=\{evaluations\.length > 0\}/);
 });
 
 test("uses info icons for informative AST nodes and no icons for structure", async () => {

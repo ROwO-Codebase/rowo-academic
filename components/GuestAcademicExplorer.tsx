@@ -260,6 +260,7 @@ function RequirementInformation({
                 root={requirement.root}
                 documentId={requirement.id}
                 anchorRegistry={anchorRegistry}
+                showCourseActivity={evaluations.length > 0}
                 evaluation={
                   evaluations.find((item) => item.documentId === requirement.id)?.root
                 }

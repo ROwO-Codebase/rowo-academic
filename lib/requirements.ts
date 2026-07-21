@@ -31,7 +31,56 @@ export function evaluateRequirementNode(
   context: RequirementEvaluationContext,
   options: RequirementEvaluationOptions = {},
 ): RequirementNodeEvaluation {
-  return evaluateRequirementNodeAtPath(node, context, options, []);
+  return evaluateRequirementNodeWithPlannedCompletion(
+    node,
+    context,
+    options,
+    [],
+  );
+}
+
+function evaluateRequirementNodeWithPlannedCompletion(
+  node: RequirementNode,
+  context: RequirementEvaluationContext,
+  options: RequirementEvaluationOptions,
+  path: number[],
+): RequirementNodeEvaluation {
+  const evaluation = evaluateRequirementNodeAtPath(
+    node,
+    context,
+    options,
+    path,
+  );
+  if (
+    options.includePlanned === true ||
+    !context.courses.some((course) => course.status === "planned")
+  ) {
+    return evaluation;
+  }
+
+  const projected = evaluateRequirementNodeAtPath(
+    node,
+    context,
+    { ...options, includePlanned: true },
+    path,
+  );
+  return attachPlannedCompletion(evaluation, projected);
+}
+
+function attachPlannedCompletion(
+  evaluation: RequirementNodeEvaluation,
+  projected: RequirementNodeEvaluation,
+): RequirementNodeEvaluation {
+  return {
+    ...evaluation,
+    plannedCompletion:
+      evaluation.state !== MET && projected.state === MET,
+    children: evaluation.children.map((child, index) =>
+      attachPlannedCompletion(
+        child,
+        projected.children[index] ?? child,
+      )),
+  };
 }
 
 function evaluateRequirementNodeAtPath(
@@ -219,13 +268,14 @@ export function evaluateRequirementDocument(
       parseStatus: document.parseStatus,
       state: UNKNOWN,
       computedState: UNKNOWN,
+      plannedCompletion: false,
       reason: "No machine-readable requirement tree is available.",
       root: null,
       warnings: unique([...document.warnings, "missing_requirement_root"]),
     };
   }
 
-  const root = evaluateRequirementNodeAtPath(
+  const root = evaluateRequirementNodeWithPlannedCompletion(
     document.ast.root,
     context,
     {
@@ -257,6 +307,7 @@ export function evaluateRequirementDocument(
     parseStatus: document.parseStatus,
     state,
     computedState,
+    plannedCompletion: !incomplete && root.plannedCompletion,
     reason:
       state !== computedState
         ? document.sourceMatchesCurrentPayload === false
@@ -1287,6 +1338,7 @@ function result(
     presentation: requirementNodePresentation(node),
     state,
     automaticState: state,
+    plannedCompletion: false,
     reason,
     referenceEvaluations: [],
     matchedCourseCodes: unique(children.flatMap((child) => child.matchedCourseCodes)),

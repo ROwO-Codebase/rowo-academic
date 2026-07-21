@@ -154,7 +154,10 @@ test("marks required course leaves that are in progress or planned", () => {
     inProgress.documents[0].root.referenceEvaluations[0].courseActivity,
     "in_progress",
   );
+  assert.equal(inProgress.documents[0].root.plannedCompletion, false);
   assert.equal(planned.state, "NOT_MET");
+  assert.equal(planned.documents[0].plannedCompletion, true);
+  assert.equal(planned.documents[0].root.plannedCompletion, true);
   assert.equal(
     planned.documents[0].root.referenceEvaluations[0].courseActivity,
     "planned",
@@ -163,6 +166,43 @@ test("marks required course leaves that are in progress or planned", () => {
     completed.documents[0].root.referenceEvaluations[0].courseActivity,
     undefined,
   );
+});
+
+test("propagates planned completion only through parents the plan will satisfy", () => {
+  const plannedCourse = node("course_completed", {
+    refs: [reference("CS135")],
+  });
+  const unmetCourse = node("course_completed", {
+    refs: [reference("MATH135")],
+  });
+  const plannedContext = context([
+    { coursePid: "cs135-pid", courseCode: "CS135", status: "planned" },
+  ]);
+  const anyResult = evaluateRequirementDocuments(
+    [document(node("root", {
+      logic: "any",
+      children: [plannedCourse, unmetCourse],
+    }))],
+    plannedContext,
+  );
+  const allResult = evaluateRequirementDocuments(
+    [document(node("root", {
+      logic: "all",
+      children: [plannedCourse, unmetCourse],
+    }))],
+    plannedContext,
+  );
+
+  assert.equal(anyResult.state, "NOT_MET");
+  assert.equal(anyResult.documents[0].plannedCompletion, true);
+  assert.equal(anyResult.documents[0].root.plannedCompletion, true);
+  assert.equal(anyResult.documents[0].root.children[0].plannedCompletion, true);
+  assert.equal(anyResult.documents[0].root.children[1].plannedCompletion, false);
+
+  assert.equal(allResult.state, "NOT_MET");
+  assert.equal(allResult.documents[0].plannedCompletion, false);
+  assert.equal(allResult.documents[0].root.plannedCompletion, false);
+  assert.equal(allResult.documents[0].root.children[0].plannedCompletion, true);
 });
 
 test("planner eligibility can count a planned prerequisite", () => {

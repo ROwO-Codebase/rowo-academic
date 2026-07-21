@@ -32,6 +32,7 @@ export interface RequirementTreeNodeData {
   children: RequirementTreeNodeData[];
   state?: TriState;
   automaticState?: TriState;
+  plannedCompletion?: boolean;
   reason?: string;
   referenceEvaluations?: RequirementReferenceEvaluation[];
   manualOverride?: RequirementNodeManualOverride;
@@ -131,6 +132,8 @@ function RequirementTreeNode({
       refs: [],
     });
   const manualOverride = effectiveNode.manualOverride;
+  const plannedCompletion = showCourseActivity &&
+    effectiveNode.plannedCompletion === true;
   const editable = Boolean(onOverrideNode);
   const showState = !isRoot && presentation === "condition" &&
     (highlighted || editable || Boolean(manualOverride)) && state !== undefined;
@@ -143,7 +146,7 @@ function RequirementTreeNode({
   const nodeLabel = text || fallbackNodeLabel(node, presentation, isRoot);
   const stableNodeKey = effectiveNode.nodeKey?.trim() ||
     requirementNodeKey(effectiveNode, path);
-  const nodeIcon = nodeIconMeta(presentation, state);
+  const nodeIcon = nodeIconMeta(presentation, state, plannedCompletion);
   const showNodeIcon = !isRoot && (editable || showState || showInformation);
   const showHeading = !isRoot && (Boolean(text) || editable || Boolean(manualOverride));
   const nodeAnchorId = node.nodeId
@@ -167,7 +170,9 @@ function RequirementTreeNode({
                 manualOverride && "is-overridden",
               ].filter(Boolean).join(" ")}
               type="button"
-              title={effectiveNode.reason ?? nodeIcon.label}
+              title={plannedCompletion
+                ? "Planned courses will satisfy this requirement."
+                : effectiveNode.reason ?? nodeIcon.label}
               aria-label={overrideButtonLabel(nodeLabel, nodeIcon.label, Boolean(manualOverride))}
               aria-haspopup="dialog"
               onClick={() => onOverrideNode?.({
@@ -181,7 +186,9 @@ function RequirementTreeNode({
           ) : (
             <span
               className={"requirement-node-state " + nodeIcon.className}
-              title={showInformation
+              title={plannedCompletion
+                ? "Planned courses will satisfy this requirement."
+                : showInformation
                 ? "Information"
                 : evaluated?.reason ?? node.reason ?? nodeIcon.label}
               aria-label={nodeIcon.label}
@@ -531,9 +538,17 @@ function fallbackNodeLabel(
 function nodeIconMeta(
   presentation: RequirementNodePresentation,
   state: TriState | undefined,
+  plannedCompletion: boolean,
 ): { label: string; symbol: string; className: string } {
   if (presentation === "informational") {
     return { label: "Information", symbol: "i", className: "state-info" };
+  }
+  if (plannedCompletion) {
+    return {
+      label: "Planned",
+      symbol: "✎",
+      className: "state-course-activity",
+    };
   }
   if (state) {
     return {

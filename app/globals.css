@@ -2057,6 +2057,12 @@ button {
   letter-spacing: -0.025em;
 }
 
+.course-record-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .course-term-groups {
   border-top: 1px solid var(--slate-200);
 }
@@ -2356,6 +2362,162 @@ button {
 
 .course-edit-body {
   padding: 20px 22px 22px;
+}
+
+.quest-import-dialog {
+  width: min(1040px, calc(100vw - 32px));
+}
+
+.quest-import-dialog .course-edit-header small {
+  display: block;
+  max-width: 620px;
+  margin-top: 5px;
+  color: var(--slate-500);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.quest-import-paste > label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--slate-700);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.quest-import-paste textarea {
+  width: 100%;
+  min-height: 300px;
+  padding: 14px;
+  resize: vertical;
+  border: 1px solid var(--slate-300);
+  border-radius: var(--radius-sm);
+  background: var(--slate-50);
+  color: var(--slate-800);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.quest-import-paste textarea:focus,
+.quest-import-course input:focus,
+.quest-import-course select:focus {
+  border-color: var(--indigo-500);
+  outline: 3px solid rgb(99 102 241 / 0.16);
+}
+
+.quest-import-warning {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--amber-100);
+  border-left: 4px solid var(--amber-600);
+  border-radius: 10px;
+  background: var(--amber-50);
+  color: var(--amber-800);
+  font-size: 11px;
+}
+
+.quest-import-warning strong {
+  display: block;
+}
+
+.quest-import-warning ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.quest-import-summary {
+  display: flex;
+  margin-bottom: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.quest-import-summary strong,
+.quest-import-summary span {
+  display: block;
+}
+
+.quest-import-summary strong {
+  color: var(--slate-900);
+  font-size: 14px;
+}
+
+.quest-import-summary span {
+  margin-top: 2px;
+  color: var(--slate-500);
+  font-size: 11px;
+}
+
+.quest-import-course-list {
+  display: grid;
+  max-height: min(48dvh, 500px);
+  margin-top: 14px;
+  overflow-y: auto;
+  gap: 9px;
+}
+
+.quest-import-course {
+  position: relative;
+  display: grid;
+  margin: 0;
+  padding: 14px 58px 14px 14px;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-sm);
+  background: var(--slate-50);
+  grid-template-columns: minmax(200px, 1.45fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr) 90px;
+  align-items: start;
+  gap: 10px;
+}
+
+.quest-import-course legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.quest-import-course label {
+  display: grid;
+  color: var(--slate-600);
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.quest-import-course input,
+.quest-import-course select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--slate-300);
+  border-radius: 9px;
+  background: var(--white);
+  color: var(--slate-800);
+  font-size: 12px;
+}
+
+.quest-import-code small {
+  overflow: hidden;
+  color: var(--slate-400);
+  font-size: 9px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quest-import-remove {
+  position: absolute;
+  top: 27px;
+  right: 10px;
+}
+
+.quest-import-actions {
+  padding-top: 2px;
+  border-top: 1px solid var(--slate-100);
 }
 
 .export-share-dialog {
@@ -5235,6 +5397,45 @@ button {
 
   .content-card-header {
     padding: 20px 18px 14px;
+  }
+
+  .course-record-header-actions {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .quest-import-dialog {
+    width: min(1040px, calc(100vw - 20px));
+    max-height: calc(100dvh - 20px);
+  }
+
+  .quest-import-paste textarea {
+    min-height: 240px;
+  }
+
+  .quest-import-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .quest-import-course-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .quest-import-course {
+    padding: 14px 56px 14px 14px;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .quest-import-code {
+    grid-column: 1 / -1;
+  }
+
+  .quest-import-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 
   .course-term-heading {

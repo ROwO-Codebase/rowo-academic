@@ -442,6 +442,29 @@ test("groups the signed-in course record by academic term", async () => {
   assert.match(styles, /\.course-term-heading/);
 });
 
+test("reviews and atomically imports a pasted Quest class schedule", async () => {
+  const [dashboard, importRoute, parser, styles] = await Promise.all([
+    source("app/app/AcademicDashboard.tsx"),
+    source("app/api/courses/import/route.ts"),
+    source("lib/quest-schedule.ts"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(dashboard, /Import from Quest/);
+  assert.match(dashboard, /parseQuestClassSchedule\(pastedText\)/);
+  assert.match(dashboard, /Confirm before adding/);
+  assert.match(dashboard, /Add missed course/);
+  assert.match(dashboard, /\/api\/courses\/import/);
+  assert.match(parser, /No courses could be parsed/);
+  assert.match(parser, /could not be parsed\. Add it manually/);
+  assert.match(importRoute, /isSameOriginMutation\(request\)/);
+  assert.match(importRoute, /getLocalSession\(request\)/);
+  assert.match(importRoute, /await db\.batch/);
+  assert.match(importRoute, /COURSE_ALREADY_RECORDED/);
+  assert.match(styles, /\.quest-import-warning/);
+  assert.match(styles, /\.quest-import-course/);
+});
+
 test("edits course status, term, and grade from an Overview dialog", async () => {
   const [dashboard, updateRoute, styles] = await Promise.all([
     source("app/app/AcademicDashboard.tsx"),

@@ -15,6 +15,7 @@ import {
   countedAcademicUnits,
   isNonAcademicCourseCode,
 } from "@/lib/course-records";
+import { parseQuestClassSchedule } from "@/lib/quest-schedule";
 import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
 import { isCourseRequirementSection } from "@/lib/requirement-sections";
 import { requirementNodeKey } from "@/lib/requirement-overrides";
@@ -1501,6 +1502,339 @@ function EditCourseDialog({
   );
 }
 
+interface QuestImportReviewCourse {
+  id: string;
+  code: string;
+  title: string;
+  status: CourseStatus;
+  term: string;
+  credits: string;
+}
+
+function QuestScheduleImportDialog({
+  existingCourses,
+  onClose,
+  onImported,
+}: {
+  existingCourses: DashboardCourse[];
+  onClose: () => void;
+  onImported: (count: number) => Promise<void>;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const [step, setStep] = useState<"paste" | "review">("paste");
+  const [pastedText, setPastedText] = useState("");
+  const [courses, setCourses] = useState<QuestImportReviewCourse[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  function parseSchedule() {
+    const result = parseQuestClassSchedule(pastedText);
+    setWarnings(result.warnings);
+    setFormError("");
+    if (result.courses.length === 0) return;
+    setCourses(
+      result.courses.map((course) => ({
+        id: crypto.randomUUID(),
+        ...course,
+        credits: course.credits == null ? "" : String(course.credits),
+      })),
+    );
+    setStep("review");
+  }
+
+  function updateCourse(
+    id: string,
+    patch: Partial<Omit<QuestImportReviewCourse, "id">>,
+  ) {
+    setCourses((current) =>
+      current.map((course) => course.id === id ? { ...course, ...patch } : course),
+    );
+    setFormError("");
+  }
+
+  function addCourse() {
+    setCourses((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        code: "",
+        title: "Course title will come from the active calendar",
+        status: "in_progress",
+        term: current[0]?.term ?? "",
+        credits: "",
+      },
+    ]);
+  }
+
+  function reviewError(): string | null {
+    if (courses.length === 0) return "Add at least one course before importing.";
+    const imported = new Set<string>();
+    const existing = new Set(
+      existingCourses.map((course) =>
+        `${course.code.toUpperCase().replace(/[^A-Z0-9]/g, "")}\u0000${
+          course.term === "Unscheduled" ? "" : course.term
+        }`,
+      ),
+    );
+    for (const [index, course] of courses.entries()) {
+      const label = `Course ${index + 1}`;
+      const code = course.code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (!code) return `${label} needs a course code.`;
+      if (
+        (course.status === "in_progress" || course.status === "planned") &&
+        !/^(?:19|20)\d{2}-(?:Winter|Spring|Fall)$/.test(course.term.trim())
+      ) {
+        return `${label} needs a term such as 2026-Fall.`;
+      }
+      if (
+        course.term.trim() &&
+        !/^(?:19|20)\d{2}-(?:Winter|Spring|Fall)$/.test(course.term.trim())
+      ) {
+        return `${label} has an invalid term. Use a term such as 2026-Fall.`;
+      }
+      const credits = course.credits.trim() === "" ? null : Number(course.credits);
+      if (
+        credits !== null &&
+        (!Number.isFinite(credits) || credits < 0 || credits > 5)
+      ) {
+        return `${label} units must be between 0 and 5.`;
+      }
+      const key = `${code}\u0000${course.term.trim()}`;
+      if (imported.has(key)) return `${label} duplicates another row in this import.`;
+      if (existing.has(key)) {
+        return `${course.code.trim()} is already in your record for ${
+          course.term.trim() || "an unscheduled term"
+        }.`;
+      }
+      imported.add(key);
+    }
+    return null;
+  }
+
+  async function importCourses(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const error = reviewError();
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+    try {
+      const result = await requestJson<{ success: true; imported: number }>(
+        "/api/courses/import",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            courses: courses.map((course) => ({
+              courseCode: course.code.trim(),
+              status: course.status,
+              term: course.term.trim() || null,
+              credits:
+                course.credits.trim() === "" ? null : Number(course.credits),
+            })),
+          }),
+        },
+      );
+      await onImported(result.imported);
+      onClose();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "The schedule could not be imported.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="course-edit-dialog quest-import-dialog"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onClose();
+      }}
+    >
+      <form className="course-edit-form" onSubmit={importCourses}>
+        <div className="course-edit-header">
+          <div>
+            <span>{step === "paste" ? "Paste from Quest" : "Confirm before adding"}</span>
+            <h2 id={titleId}>Import My Class Schedule</h2>
+            <small>
+              {step === "paste"
+                ? "Copy the complete List View from Quest. Nothing is added until you confirm."
+                : "Check every course. Saved titles and codes are verified against the active calendar."}
+            </small>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close schedule import dialog"
+            disabled={saving}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        {step === "paste" ? (
+          <div className="course-edit-body quest-import-paste">
+            <label htmlFor="quest-schedule-text">Quest schedule text</label>
+            <textarea
+              id="quest-schedule-text"
+              value={pastedText}
+              maxLength={200_000}
+              autoFocus
+              placeholder={"My Class Schedule\nFall 2026 | Undergraduate | University of Waterloo\nCO 456 - Intro Game Theory\n…"}
+              onChange={(event) => {
+                setPastedText(event.target.value);
+                setWarnings([]);
+                setFormError("");
+              }}
+            />
+            {warnings.length > 0 && (
+              <div className="quest-import-warning" role="alert">
+                <strong>Some schedule details could not be parsed.</strong>
+                <ul>
+                  {warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              </div>
+            )}
+            {formError && <p className="form-error" role="alert">{formError}</p>}
+            <div className="form-actions">
+              <button className="button button-secondary" type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                className="button button-primary"
+                type="button"
+                disabled={!pastedText.trim()}
+                onClick={parseSchedule}
+              >
+                Parse schedule
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="course-edit-body quest-import-review">
+            <div className="quest-import-summary">
+              <div>
+                <strong>{courses.length} {courses.length === 1 ? "course" : "courses"} found</strong>
+                <span>Quest enrolled courses default to In progress.</span>
+              </div>
+              <button className="text-button" type="button" disabled={saving} onClick={addCourse}>
+                ＋ Add missed course
+              </button>
+            </div>
+            {warnings.length > 0 && (
+              <div className="quest-import-warning" role="alert">
+                <strong>Review these parsing warnings before importing.</strong>
+                <ul>
+                  {warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              </div>
+            )}
+            <div className="quest-import-course-list">
+              {courses.map((course, index) => (
+                <fieldset className="quest-import-course" key={course.id}>
+                  <legend>Course {index + 1}</legend>
+                  <label className="quest-import-code">
+                    Course code
+                    <input
+                      type="text"
+                      value={course.code}
+                      autoComplete="off"
+                      placeholder="CS 341"
+                      onChange={(event) => updateCourse(course.id, { code: event.target.value })}
+                    />
+                    <small>{course.title}</small>
+                  </label>
+                  <label>
+                    Status
+                    <select
+                      value={course.status}
+                      onChange={(event) => updateCourse(course.id, {
+                        status: event.target.value as CourseStatus,
+                      })}
+                    >
+                      <option value="completed">Completed</option>
+                      <option value="in_progress">In progress</option>
+                      <option value="planned">Planned</option>
+                      <option value="transfer">Transfer</option>
+                    </select>
+                  </label>
+                  <label>
+                    Term
+                    <input
+                      type="text"
+                      value={course.term}
+                      autoComplete="off"
+                      placeholder="2026-Fall"
+                      onChange={(event) => updateCourse(course.id, { term: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Units
+                    <input
+                      type="number"
+                      value={course.credits}
+                      min="0"
+                      max="5"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder="Calendar"
+                      onChange={(event) => updateCourse(course.id, { credits: event.target.value })}
+                    />
+                  </label>
+                  <button
+                    className="icon-button danger quest-import-remove"
+                    type="button"
+                    aria-label={`Remove ${course.code || `course ${index + 1}`} from import`}
+                    disabled={saving}
+                    onClick={() => setCourses((current) =>
+                      current.filter((item) => item.id !== course.id))}
+                  >
+                    ×
+                  </button>
+                </fieldset>
+              ))}
+            </div>
+            {formError && <p className="form-error" role="alert">{formError}</p>}
+            <div className="form-actions quest-import-actions">
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setStep("paste");
+                  setFormError("");
+                }}
+              >
+                Back
+              </button>
+              <button className="button button-primary" type="submit" disabled={saving || courses.length === 0}>
+                {saving ? "Adding courses…" : `Add ${courses.length} ${courses.length === 1 ? "course" : "courses"}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </form>
+    </dialog>
+  );
+}
+
 interface OverrideReferenceCandidate {
   targetType: "course" | "program";
   targetPid: string;
@@ -2474,6 +2808,7 @@ function OverviewPanel({
   setNotice: (message: string) => void;
 }) {
   const [editingCourse, setEditingCourse] = useState<DashboardCourse | null>(null);
+  const [importingSchedule, setImportingSchedule] = useState(false);
   const summary = dashboard.summary;
   const completedPercent =
     summary &&
@@ -2582,6 +2917,13 @@ function OverviewPanel({
         <div className="dashboard-hero-actions">
           <button className="button button-secondary" type="button" onClick={onExport}>
             Export &amp; share
+          </button>
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={() => setImportingSchedule(true)}
+          >
+            Import from Quest
           </button>
           <button className="button button-primary" type="button" onClick={onOpenCatalog}>
             Add a course
@@ -2697,9 +3039,14 @@ function OverviewPanel({
             <span className="card-kicker">Your evidence</span>
             <h2 id="course-record-title">Course record</h2>
           </div>
-          <button className="text-button" type="button" onClick={onOpenCatalog}>
-            Add course
-          </button>
+          <div className="course-record-header-actions">
+            <button className="text-button" type="button" onClick={() => setImportingSchedule(true)}>
+              Import schedule
+            </button>
+            <button className="text-button" type="button" onClick={onOpenCatalog}>
+              Add course
+            </button>
+          </div>
         </div>
 
         {dashboard.courses.length === 0 ? (
@@ -2709,6 +3056,9 @@ function OverviewPanel({
             <p>Add a completed, in-progress, or planned course to begin.</p>
             <button className="button button-primary" type="button" onClick={onOpenCatalog}>
               Browse courses
+            </button>
+            <button className="button button-secondary" type="button" onClick={() => setImportingSchedule(true)}>
+              Import from Quest
             </button>
           </div>
         ) : (
@@ -2806,6 +3156,18 @@ function OverviewPanel({
           saving={busyCourseId === editingCourse.id}
           onClose={() => setEditingCourse(null)}
           onSave={(patch) => updateCourse(editingCourse, patch)}
+        />
+      )}
+      {importingSchedule && (
+        <QuestScheduleImportDialog
+          existingCourses={dashboard.courses}
+          onClose={() => setImportingSchedule(false)}
+          onImported={async (count) => {
+            await onReload();
+            setNotice(
+              `${count} ${count === 1 ? "course was" : "courses were"} added from Quest.`,
+            );
+          }}
         />
       )}
     </div>

@@ -138,16 +138,55 @@ test("loads dashboard data by active tab and checks planner eligibility on entry
   assert.match(dashboardRoute, /scope === "planner"/);
   assert.match(
     dashboardRoute,
-    /scope === "progress" \? progress\.requirementAnalysis : null/,
+    /scope === "progress"[\s\S]*?progress\.requirementAnalysis/,
   );
   assert.match(
     dashboardRoute,
     /scope === "planner" \? recommendations : \[\]/,
   );
+  assert.match(
+    dashboardRoute,
+    /courseRecords:\s*scope === "progress" \? \[\] : records\.map\(publicCourse\)/,
+  );
   assert.match(dashboard, /"\/api\/dashboard\?tab=" \+ scope/);
   assert.match(dashboard, /tabLoadStates\[activeTab\] !== "idle"/);
   assert.match(dashboard, /void loadDashboardScope\(activeTab\)/);
   assert.match(dashboard, /void checkEligibility\(false\)/);
+});
+
+test("bootstraps personal data on the server and defers heavy dashboard work", async () => {
+  const [page, dashboard, dashboardRoute, academic, evidence, requirements] =
+    await Promise.all([
+      source("app/app/page.tsx"),
+      source("app/app/AcademicDashboard.tsx"),
+      source("app/api/dashboard/route.ts"),
+      source("lib/academic.ts"),
+      source("lib/student-program-evidence.ts"),
+      source("lib/requirements.ts"),
+    ]);
+
+  assert.match(page, /GET as getDashboardResponse/);
+  assert.match(page, /loadInitialDashboard\(\)/);
+  assert.match(page, /initialDashboardPayload=\{initialDashboard\.payload\}/);
+  assert.match(dashboard, /lazy\(async \(\) =>/);
+  assert.match(dashboard, /await import\("@\/lib\/dashboard-exports"\)/);
+  assert.match(dashboard, /scopeAbortControllers/);
+  assert.match(dashboard, /courses: current\.courses/);
+  assert.match(dashboardRoute, /const calendarPromise = getCatalogMetadata/);
+  assert.match(dashboardRoute, /getProgramRequirementDocumentsByPids/);
+  assert.match(dashboardRoute, /getCoursesByCodes/);
+  assert.match(
+    dashboardRoute,
+    /extractCourseRecommendations\([\s\S]*?requirementAnalysis/,
+  );
+  assert.match(academic, /export async function getProgramsByPids/);
+  assert.match(academic, /export async function getCoursesByCodes/);
+  assert.match(
+    academic,
+    /export async function getProgramRequirementDocumentsByPids/,
+  );
+  assert.match(evidence, /getProgramsByPids/);
+  assert.match(requirements, /analysis\?: RequirementEvaluationSummary/);
 });
 
 test("exports and shares private schedule and progress files from the active dashboard tab", async () => {

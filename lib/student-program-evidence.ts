@@ -1,4 +1,4 @@
-import { getProgramByPid } from "./academic";
+import { getProgramsByPids } from "./academic";
 import type {
   AcademicEnvironment,
   AcademicProgram,
@@ -28,12 +28,23 @@ export async function hydrateStudentPrograms<
   programs: T[],
   activeCatalogId: string,
 ): Promise<Array<HydratedStudentProgram<T>>> {
-  return Promise.all(programs.map(async (saved) => {
+  const activePrograms = programs.filter(
+    (saved) => saved.catalogId === activeCatalogId,
+  );
+  const catalogPrograms = await getProgramsByPids(
+    academicEnv,
+    activePrograms.map((saved) => saved.programPid),
+  );
+  const catalogProgramsByPid = new Map(
+    catalogPrograms.map((program) => [program.pid, program]),
+  );
+
+  return programs.map((saved) => {
     if (saved.catalogId !== activeCatalogId) {
       return { saved, catalog: null, evidence: null };
     }
 
-    const catalog = await getProgramByPid(academicEnv, saved.programPid);
+    const catalog = catalogProgramsByPid.get(saved.programPid) ?? null;
     return {
       saved,
       catalog,
@@ -46,7 +57,7 @@ export async function hydrateStudentPrograms<
         status: "active",
       },
     };
-  }));
+  });
 }
 
 export function studentProgramEvidence<T extends SavedProgramEvidenceSource>(

@@ -717,6 +717,71 @@ test("extracts unresolved positive course work as recommendations", () => {
   assert.equal(recommendations[1].isOption, true);
 });
 
+test("recommendations reuse supplied analysis with manual overrides", () => {
+  const root = node("root", {
+    logic: "all",
+    children: [
+      node("course_completed", { refs: [reference("CS135")] }),
+      node("course_completed", { refs: [reference("MATH135")] }),
+    ],
+  });
+  const documents = [
+    document(root, {
+      ownerType: "programs",
+      requirementKind: "course_requirements",
+    }),
+  ];
+  const evaluationContext = context([]);
+  const analysis = evaluateRequirementDocuments(
+    documents,
+    evaluationContext,
+    {
+      nodeOverrides: [{
+        id: "override-cs135",
+        documentId: "document-1",
+        nodeKey: "index:0",
+        state: "MET",
+        note: "Equivalent credit approved.",
+        references: [],
+        updatedAt: 1,
+      }],
+    },
+  );
+
+  const recommendations = extractCourseRecommendations(
+    documents,
+    evaluationContext,
+    analysis,
+  );
+
+  assert.deepEqual(
+    recommendations.map((item) => item.courseCode),
+    ["MATH135"],
+  );
+});
+
+test("recommendations reject an incomplete supplied analysis", () => {
+  const requirement = document(
+    node("course_completed", { refs: [reference("CS135")] }),
+  );
+
+  assert.throws(
+    () =>
+      extractCourseRecommendations(
+        [requirement],
+        context([]),
+        {
+          state: "UNKNOWN",
+          documents: [],
+          metCount: 0,
+          notMetCount: 0,
+          unknownCount: 0,
+        },
+      ),
+    /missing document "document-1"/,
+  );
+});
+
 test("a catalog-confirmed course with no requisite documents has no restriction", () => {
   const result = validateCourseEligibility([], context([]));
   assert.equal(result.state, "MET");

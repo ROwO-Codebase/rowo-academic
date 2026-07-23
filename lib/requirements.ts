@@ -352,12 +352,28 @@ export function collectUnmetCourseCodes(
 export function extractCourseRecommendations(
   documents: RequirementDocument[],
   context: RequirementEvaluationContext,
+  analysis?: RequirementEvaluationSummary,
 ): CourseRecommendation[] {
   const recommendations = new Map<string, CourseRecommendation>();
+  const suppliedEvaluations = analysis == null
+    ? null
+    : new Map(
+        analysis.documents.map((evaluation) => [
+          evaluation.documentId,
+          evaluation,
+        ]),
+      );
   for (const document of documents) {
+    const suppliedEvaluation = suppliedEvaluations?.get(document.documentId);
+    if (suppliedEvaluations && !suppliedEvaluation) {
+      throw new Error(
+        `Requirement evaluation summary is missing document "${document.documentId}".`,
+      );
+    }
     const root = document.ast?.root;
     if (!root) continue;
-    const evaluation = evaluateRequirementDocument(document, context);
+    const evaluation = suppliedEvaluation ??
+      evaluateRequirementDocument(document, context);
     if (!evaluation.root || evaluation.state === MET) continue;
     walkBlockingNodes(root, evaluation.root, (node) => {
       if (![

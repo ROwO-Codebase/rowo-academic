@@ -16,6 +16,9 @@ import type {
 export const DEFAULT_ACADEMIC_CATALOG_ID = "663290e835aff7001cc62323";
 export const DEFAULT_ACADEMIC_CALENDAR_LABEL = "2026";
 
+const MAX_BATCH_PROGRAMS = 8;
+const MAX_BATCH_COURSES = 12;
+
 type QueryRow = Record<string, unknown>;
 
 export class AcademicDataError extends Error {
@@ -121,6 +124,41 @@ export async function getCourseByPid(
   return createAcademicRepository(environment, overrides).getCourseByPid(pid);
 }
 
+export async function getCoursesByCodes(
+  environment: AcademicEnvironment,
+  codes: readonly string[],
+  overrides: Partial<AcademicCatalogConfig> = {},
+): Promise<AcademicCourse[]> {
+  const normalizedCodes = cleanBatchValues(
+    codes,
+    MAX_BATCH_COURSES,
+    "course codes",
+    normalizeLookupCode,
+  );
+  if (normalizedCodes.length === 0) return [];
+
+  const config = resolveAcademicCatalogConfig(environment, overrides);
+  const backend = createQueryBackend(environment);
+  const placeholders = normalizedCodes.map(() => "?").join(", ");
+  const rows = await backend.select<QueryRow>(
+    `${courseColumns(true)}
+      FROM courses_full
+      WHERE catalog_id = ? AND in_catalog = 1 AND details_loaded = 1
+        AND catalog_course_id COLLATE NOCASE IN (${placeholders})`,
+    [config.catalogId, ...normalizedCodes],
+  );
+  const coursesByCode = new Map(
+    rows.map((row) => {
+      const course = mapCourse(row);
+      return [normalizeLookupCode(course.code), course] as const;
+    }),
+  );
+  return normalizedCodes.flatMap((code) => {
+    const course = coursesByCode.get(code);
+    return course ? [course] : [];
+  });
+}
+
 export async function searchPrograms(
   environment: AcademicEnvironment,
   options: ProgramSearchOptions = {},
@@ -145,6 +183,40 @@ export async function getProgramByPid(
   return createAcademicRepository(environment, overrides).getProgramByPid(pid);
 }
 
+export async function getProgramsByPids(
+  environment: AcademicEnvironment,
+  pids: readonly string[],
+  overrides: Partial<AcademicCatalogConfig> = {},
+): Promise<AcademicProgram[]> {
+  const cleanedPids = cleanBatchValues(
+    pids,
+    MAX_BATCH_PROGRAMS,
+    "program PIDs",
+  );
+  if (cleanedPids.length === 0) return [];
+
+  const config = resolveAcademicCatalogConfig(environment, overrides);
+  const backend = createQueryBackend(environment);
+  const placeholders = cleanedPids.map(() => "?").join(", ");
+  const rows = await backend.select<QueryRow>(
+    `${programColumns(true)}
+      FROM programs_full
+      WHERE catalog_id = ? AND in_catalog = 1 AND details_loaded = 1
+        AND pid IN (${placeholders})`,
+    [config.catalogId, ...cleanedPids],
+  );
+  const programsByPid = new Map(
+    rows.map((row) => {
+      const program = mapProgram(row);
+      return [program.pid, program] as const;
+    }),
+  );
+  return cleanedPids.flatMap((pid) => {
+    const program = programsByPid.get(pid);
+    return program ? [program] : [];
+  });
+}
+
 export async function getCourseRequirementDocuments(
   environment: AcademicEnvironment,
   pidOrCode: string,
@@ -161,6 +233,44 @@ export async function getProgramRequirementDocuments(
 ): Promise<RequirementDocument[]> {
   return createAcademicRepository(environment, overrides)
     .getProgramRequirementDocuments(pidOrCode);
+}
+
+export async function getProgramRequirementDocumentsByPids(
+  environment: AcademicEnvironment,
+  pids: readonly string[],
+  overrides: Partial<AcademicCatalogConfig> = {},
+): Promise<RequirementDocument[]> {
+  const cleanedPids = cleanBatchValues(
+    pids,
+    MAX_BATCH_PROGRAMS,
+    "program PIDs",
+  );
+  if (cleanedPids.length === 0) return [];
+
+  const config = resolveAcademicCatalogConfig(environment, overrides);
+  const backend = createQueryBackend(environment);
+  const placeholders = cleanedPids.map(() => "?").join(", ");
+  const rows = await backend.select<QueryRow>(
+    `SELECT document_id, catalog_id, owner_type, owner_pid, owner_version_id,
+            owner_code, requirement_kind, source_field, source_format,
+            parse_status, evaluability, warnings_json, ast_json, source_html,
+            source_matches_current_payload
+       FROM program_requirements
+      WHERE catalog_id = ? AND owner_pid IN (${placeholders})
+      ORDER BY owner_pid, requirement_kind, source_field`,
+    [config.catalogId, ...cleanedPids],
+  );
+  const documentsByPid = new Map<string, RequirementDocument[]>();
+  for (const row of rows) {
+    const document = mapRequirementDocument(row);
+    const documents = documentsByPid.get(document.ownerPid);
+    if (documents) {
+      documents.push(document);
+    } else {
+      documentsByPid.set(document.ownerPid, [document]);
+    }
+  }
+  return cleanedPids.flatMap((pid) => documentsByPid.get(pid) ?? []);
 }
 
 function createQueryBackend(environment: AcademicEnvironment): QueryBackend {
@@ -727,6 +837,27 @@ function cleanString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const result = value.trim();
   return result || null;
+}
+
+function cleanBatchValues(
+  values: readonly string[],
+  maximum: number,
+  label: string,
+  normalize: (value: string) => string = (value) => value,
+): string[] {
+  const cleaned = new Set<string>();
+  for (const value of values) {
+    const trimmed = cleanString(value);
+    if (!trimmed) continue;
+    const normalized = normalize(trimmed);
+    if (normalized) cleaned.add(normalized);
+  }
+  if (cleaned.size > maximum) {
+    throw new AcademicDataError(
+      `A batch can contain at most ${maximum} unique ${label}.`,
+    );
+  }
+  return [...cleaned];
 }
 
 function nullableString(value: unknown): string | null {

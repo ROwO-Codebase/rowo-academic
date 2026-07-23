@@ -9,9 +9,9 @@ import {
 } from "@/db/schema";
 import {
   AcademicDataError,
+  getCoursesByCodes,
   getCatalogMetadata,
-  getCourseByCode,
-  getProgramRequirementDocuments,
+  getProgramRequirementDocumentsByPids,
 } from "@/lib/academic";
 import { getLocalSession } from "@/lib/auth";
 import {
@@ -71,6 +71,10 @@ function gradePercent(grade: string | null): number | null {
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
 }
 
+function courseCodeKey(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 function toEvaluationCourse(record: typeof courseRecords.$inferSelect): StudentCourseRecord {
   return {
     coursePid: record.coursePid,
@@ -101,43 +105,11 @@ function completedUnits(records: Array<typeof courseRecords.$inferSelect>): numb
   }
   const deduplicated = [...uniqueCourses.values()];
   if (deduplicated.some((record) => record.credits == null)) return null;
-  return deduplicated.reduce((sum, record) => sum + (record.credits ?? 0), 0);
-}
-
-function termSortKey(term: string | null): number {
-  if (!term) return -1;
-  const match = term.match(/^(\d{4})-(Winter|Spring|Fall)$/);
-  if (!match) return 0;
-  const seasonRank = { Winter: 1, Spring: 2, Fall: 3 }[match[2] as "Winter" | "Spring" | "Fall"];
-  return Number(match[1]) * 10 + seasonRank;
-}
-
-function groupByTerm(records: Array<typeof courseRecords.$inferSelect>) {
-  const groups = new Map<string | null, Array<typeof courseRecords.$inferSelect>>();
-  for (const record of records) {
-    const list = groups.get(record.term) ?? [];
-    list.push(record);
-    groups.set(record.term, list);
-  }
-  return [...groups.entries()]
-    .sort(([left], [right]) => termSortKey(right) - termSortKey(left))
-    .map(([term, courses]) => ({
-      term,
-      label: term ?? "Unscheduled",
-      courses: courses.map(publicCourse),
-      credits: courses.reduce(
-        (sum, course) =>
-          sum + countedAcademicUnits(course.courseCode, course.credits),
-        0,
-      ),
-      completedCredits: courses
-        .filter((course) => course.status === "completed" || course.status === "transfer")
-        .reduce(
-          (sum, course) =>
-            sum + countedAcademicUnits(course.courseCode, course.credits),
-          0,
-        ),
-    }));
+  return deduplicated.reduce(
+    (sum, record) =>
+      sum + countedAcademicUnits(record.courseCode, record.credits),
+    0,
+  );
 }
 
 export async function GET(request: Request) {
@@ -149,6 +121,8 @@ export async function GET(request: Request) {
 
     const scope = dashboardDataScope(request);
     const db = getUserDb();
+    const academicEnv = env as unknown as AcademicEnvironment;
+    const calendarPromise = getCatalogMetadata(academicEnv);
     const overridesPromise = scope === "overview"
       ? Promise.resolve({
           overrides: [] as Array<typeof requirementNodeOverrides.$inferSelect>,
@@ -176,7 +150,7 @@ export async function GET(request: Request) {
           overrides,
           references: referenceRows.map((row) => row.reference),
         }));
-    const [programRows, records, overrideData] = await Promise.all([
+    const [programRows, records, overrideData, calendar] = await Promise.all([
       db
         .select()
         .from(userPrograms)
@@ -188,6 +162,7 @@ export async function GET(request: Request) {
         .where(eq(courseRecords.userId, session.user.localId))
         .orderBy(desc(courseRecords.updatedAt)),
       overridesPromise,
+      calendarPromise,
     ]);
     const overrideRows = overrideData.overrides;
     const overrideReferenceRows = overrideData.references;
@@ -202,14 +177,33 @@ export async function GET(request: Request) {
     }
     const selectedProgram =
       programRows.find((program) => program.isPrimary) ?? programRows[0] ?? null;
-    const academicEnv = env as unknown as AcademicEnvironment;
-    const calendar = await getCatalogMetadata(academicEnv);
     const evaluationCourses = records.map(toEvaluationCourse);
-    const hydratedPrograms = await hydrateStudentPrograms(
-      academicEnv,
-      programRows,
-      calendar.catalogId,
-    );
+    const activeProgramPids = programRows
+      .filter((program) => program.catalogId === calendar.catalogId)
+      .map((program) => program.programPid);
+    const [hydratedPrograms, requirementDocuments] = await Promise.all([
+      hydrateStudentPrograms(
+        academicEnv,
+        programRows,
+        calendar.catalogId,
+      ),
+      scope === "overview"
+        ? Promise.resolve([])
+        : getProgramRequirementDocumentsByPids(
+            academicEnv,
+            activeProgramPids,
+          ),
+    ]);
+    const requirementDocumentsByPid = new Map<
+      string,
+      typeof requirementDocuments
+    >();
+    for (const document of requirementDocuments) {
+      const documents =
+        requirementDocumentsByPid.get(document.ownerPid) ?? [];
+      documents.push(document);
+      requirementDocumentsByPid.set(document.ownerPid, documents);
+    }
     const evaluationPrograms = studentProgramEvidence(hydratedPrograms);
     const sharedCompletedUnits = completedUnits(records);
     const programProgress = await Promise.all(
@@ -236,10 +230,8 @@ export async function GET(request: Request) {
           };
         }
 
-        const documents = await getProgramRequirementDocuments(
-          academicEnv,
-          savedProgram.programPid,
-        );
+        const documents =
+          requirementDocumentsByPid.get(savedProgram.programPid) ?? [];
         const context: RequirementEvaluationContext = {
           courses: evaluationCourses,
           programs: evaluationPrograms,
@@ -252,21 +244,33 @@ export async function GET(request: Request) {
             document.ownerPid === savedProgram.programPid &&
             document.ownerVersionId === savedProgram.programVersionId,
         );
-        const documentSourceKeys = new Map(
-          await Promise.all(
-            currentDocuments.map(async (document) => [
-              document.documentId,
-              await requirementDocumentSourceKey(document),
-            ] as const),
-          ),
+        const overrideCandidates = overrideRows.filter(
+          (override) =>
+            versionMatches &&
+            override.userProgramId === savedProgram.id &&
+            override.catalogId === savedProgram.catalogId &&
+            override.programVersionId === savedProgram.programVersionId,
         );
-        const nodeOverrides: RequirementNodeManualOverride[] = overrideRows
+        const overrideDocumentIds = new Set(
+          overrideCandidates.map((override) => override.documentId),
+        );
+        const documentSourceKeys = overrideCandidates.length === 0
+          ? new Map<string, string>()
+          : new Map(
+              await Promise.all(
+                currentDocuments
+                  .filter((document) =>
+                    overrideDocumentIds.has(document.documentId),
+                  )
+                  .map(async (document) => [
+                    document.documentId,
+                    await requirementDocumentSourceKey(document),
+                  ] as const),
+              ),
+            );
+        const nodeOverrides: RequirementNodeManualOverride[] = overrideCandidates
           .filter(
             (override) =>
-              versionMatches &&
-              override.userProgramId === savedProgram.id &&
-              override.catalogId === savedProgram.catalogId &&
-              override.programVersionId === savedProgram.programVersionId &&
               documentSourceKeys.get(override.documentId) ===
                 override.documentSourceHash,
           )
@@ -306,7 +310,11 @@ export async function GET(request: Request) {
                   document.state,
                 ]),
               );
-              return extractCourseRecommendations(documents, context)
+              return extractCourseRecommendations(
+                documents,
+                context,
+                requirementAnalysis,
+              )
                 .filter(
                   (reference) =>
                     unmetCodes.has(reference.courseCode) &&
@@ -373,12 +381,25 @@ export async function GET(request: Request) {
           left.courseCode.localeCompare(right.courseCode),
       )
       .slice(0, MAX_RECOMMENDATIONS);
-    const recommendations = await Promise.all(
-      rankedRecommendations.map(async (recommendation) => ({
+    const recommendationCourses = await getCoursesByCodes(
+      academicEnv,
+      rankedRecommendations.map((recommendation) => recommendation.courseCode),
+    );
+    const recommendationCoursesByCode = new Map(
+      recommendationCourses.map((course) => [
+        courseCodeKey(course.code),
+        course,
+      ]),
+    );
+    const recommendations = rankedRecommendations.map(
+      (recommendation) => ({
         ...recommendation,
         planCount: recommendation.programs.length,
-        course: await getCourseByCode(academicEnv, recommendation.courseCode),
-      })),
+        course:
+          recommendationCoursesByCode.get(
+            courseCodeKey(recommendation.courseCode),
+          ) ?? null,
+      }),
     );
 
     const selectedProgress = selectedProgram
@@ -386,14 +407,6 @@ export async function GET(request: Request) {
       : null;
     const calendarMismatch = selectedProgress?.calendarMismatch === true;
     const catalogProgram = selectedProgress?.catalog ?? null;
-    const requirementAnalysis = selectedProgress?.requirementAnalysis ?? null;
-
-    const statusCounts = Object.fromEntries(
-      ["completed", "in_progress", "planned", "transfer"].map((status) => [
-        status,
-        records.filter((course) => course.status === status).length,
-      ]),
-    );
 
     return Response.json(
       {
@@ -410,30 +423,28 @@ export async function GET(request: Request) {
           catalog: catalogProgram,
           calendarMismatch,
         },
-        programs: programProgress.map(
-          ({ recommendations: _recommendations, ...progress }) => {
-            void _recommendations;
-            return {
-              ...progress,
-              requirementAnalysis:
-                scope === "progress" ? progress.requirementAnalysis : null,
-            };
-          },
-        ),
-        courseRecords: records.map(publicCourse),
+        programs:
+          scope === "planner"
+            ? []
+            : programProgress.map(
+                ({ recommendations: _recommendations, ...progress }) => {
+                  void _recommendations;
+                  return {
+                    ...progress,
+                    requirementAnalysis:
+                      scope === "progress"
+                        ? progress.requirementAnalysis
+                        : null,
+                  };
+                },
+              ),
+        courseRecords:
+          scope === "progress" ? [] : records.map(publicCourse),
         calendar,
-        requirementAnalysis: scope === "progress" ? requirementAnalysis : null,
         recommendedUnmetCourseReferences:
           scope === "planner" ? recommendations : [],
-        terms: groupByTerm(records),
         progress: {
-          statusCounts,
           completedUnits: completedUnits(records),
-          totalRecordedCredits: records.reduce(
-            (sum, course) =>
-              sum + countedAcademicUnits(course.courseCode, course.credits),
-            0,
-          ),
         },
       },
       { headers: { "cache-control": "no-store" } },

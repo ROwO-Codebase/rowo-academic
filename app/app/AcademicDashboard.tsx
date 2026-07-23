@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -15,17 +17,9 @@ import {
   countedAcademicUnits,
   isNonAcademicCourseCode,
 } from "@/lib/course-records";
-import { parseQuestClassSchedule } from "@/lib/quest-schedule";
 import { percentageToGpa, weightedGradeAverage } from "@/lib/grade-scale";
 import { isCourseRequirementSection } from "@/lib/requirement-sections";
 import { requirementNodeKey } from "@/lib/requirement-overrides";
-import {
-  createCourseSchedulePdf,
-  createCourseScheduleXlsx,
-  createPlanProgressChecklistPdf,
-  downloadGeneratedExport,
-  shareGeneratedExport,
-} from "@/lib/dashboard-exports";
 import {
   buildRequirementAnchorRegistry,
   buildTrackedProgramAnchorRegistry,
@@ -33,22 +27,33 @@ import {
   type TrackedProgramAnchorRegistry,
 } from "@/lib/requirement-anchors";
 import { Brand } from "../../components/Brand";
-import {
-  GuestAcademicExplorer,
-  SignedInAcademicBrowser as CatalogPanel,
-} from "../../components/GuestAcademicExplorer";
-import {
-  RequirementTree,
-  type RequirementOverrideTarget,
-  type RequirementTreeNodeData,
+import type {
+  RequirementOverrideTarget,
+  RequirementTreeNodeData,
 } from "../../components/RequirementTree";
 import type {
   RequirementNodeManualReference,
   TriState,
 } from "@/lib/types";
 
+const GuestAcademicExplorer = lazy(async () => {
+  const loaded = await import("../../components/GuestAcademicExplorer");
+  return { default: loaded.GuestAcademicExplorer };
+});
+
+const CatalogPanel = lazy(async () => {
+  const loaded = await import("../../components/GuestAcademicExplorer");
+  return { default: loaded.SignedInAcademicBrowser };
+});
+
+const RequirementTree = lazy(async () => {
+  const loaded = await import("../../components/RequirementTree");
+  return { default: loaded.RequirementTree };
+});
+
 type TabId = "overview" | "progress" | "planner" | "catalog";
 type DashboardDataScope = "overview" | "progress" | "planner";
+type DashboardLoadState = "loading" | "ready" | "error" | "guest";
 type CourseStatus = "completed" | "in_progress" | "planned" | "transfer";
 type RequirementStatus = "met" | "planned" | "not_met" | "unknown";
 type EligibilityStatus = "eligible" | "provisional" | "blocked" | "unknown";
@@ -282,7 +287,7 @@ interface ApiDashboardPayload {
   programs?: ApiProgramProgress[];
   courseRecords: ApiCourseRecord[];
   calendar: ApiCatalogMetadata;
-  requirementAnalysis: ApiRequirementAnalysis | null;
+  requirementAnalysis?: ApiRequirementAnalysis | null;
   recommendedUnmetCourseReferences?: Array<{
     courseCode: string;
     reason: string;
@@ -296,7 +301,7 @@ interface ApiDashboardPayload {
   }>;
   progress: {
     completedUnits: number | null;
-    totalRecordedCredits: number;
+    totalRecordedCredits?: number;
   };
 }
 
@@ -622,7 +627,14 @@ function normalizeDashboardPayload(
   const records = Array.isArray(payload.courseRecords)
     ? payload.courseRecords
     : [];
-  const analysis = payload.requirementAnalysis;
+  const selected = payload.program?.selected;
+  const selectedProgramProgress = selected
+    ? payload.programs?.find((program) => program.saved?.id === selected.id)
+    : null;
+  const analysis =
+    payload.requirementAnalysis ??
+    selectedProgramProgress?.requirementAnalysis ??
+    null;
   const requirements = normalizeRequirements(analysis);
 
   const dashboardCourses: DashboardCourse[] = records.map((record) => {
@@ -674,7 +686,6 @@ function normalizeDashboardPayload(
         sum + countedAcademicUnits(record.courseCode, record.credits),
       0,
     );
-  const selected = payload.program?.selected;
   const catalogProgram = payload.program?.catalog;
   const calendar = payload.calendar;
   const calendarMismatch = payload.program?.calendarMismatch === true;
@@ -792,8 +803,36 @@ function mergeDashboardScope(
 ): DashboardPayload {
   if (!current || scope === "overview") return incoming;
   if (scope === "progress") {
+    const programs = incoming.programs.map((program) => {
+      const previous = current.programs.find(
+        (candidate) => candidate.profile.id === program.profile.id,
+      );
+      const summary =
+        program.summary && previous?.summary
+          ? {
+              ...previous.summary,
+              requirementsMet: program.summary.requirementsMet,
+              requirementsTotal: program.summary.requirementsTotal,
+              requirementsUnknown: program.summary.requirementsUnknown,
+            }
+          : program.summary;
+      return { ...program, summary };
+    });
+    const summary =
+      incoming.summary && current.summary
+        ? {
+            ...current.summary,
+            requirementsMet: incoming.summary.requirementsMet,
+            requirementsTotal: incoming.summary.requirementsTotal,
+            requirementsUnknown: incoming.summary.requirementsUnknown,
+          }
+        : incoming.summary;
     return {
       ...incoming,
+      summary,
+      programs,
+      courses: current.courses,
+      terms: current.terms,
       suggestions: current.suggestions,
     };
   }
@@ -1537,19 +1576,24 @@ function QuestScheduleImportDialog({
     };
   }, []);
 
-  function parseSchedule() {
-    const result = parseQuestClassSchedule(pastedText);
-    setWarnings(result.warnings);
-    setFormError("");
-    if (result.courses.length === 0) return;
-    setCourses(
-      result.courses.map((course) => ({
-        id: crypto.randomUUID(),
-        ...course,
-        credits: course.credits == null ? "" : String(course.credits),
-      })),
-    );
-    setStep("review");
+  async function parseSchedule() {
+    try {
+      const { parseQuestClassSchedule } = await import("@/lib/quest-schedule");
+      const result = parseQuestClassSchedule(pastedText);
+      setWarnings(result.warnings);
+      setFormError("");
+      if (result.courses.length === 0) return;
+      setCourses(
+        result.courses.map((course) => ({
+          id: crypto.randomUUID(),
+          ...course,
+          credits: course.credits == null ? "" : String(course.credits),
+        })),
+      );
+      setStep("review");
+    } catch {
+      setFormError("The pasted schedule could not be parsed.");
+    }
   }
 
   function updateCourse(
@@ -1721,7 +1765,7 @@ function QuestScheduleImportDialog({
                 className="button button-primary"
                 type="button"
                 disabled={!pastedText.trim()}
-                onClick={parseSchedule}
+                onClick={() => void parseSchedule()}
               >
                 Parse schedule
               </button>
@@ -2364,7 +2408,9 @@ function ExportShareDialog({
     };
   }
 
-  function generateExport() {
+  function generateExport(
+    exporters: typeof import("@/lib/dashboard-exports"),
+  ) {
     const generatedAt = new Date();
     if (mode === "schedule") {
       const courses = dashboard.courses.map((course) => ({
@@ -2376,10 +2422,10 @@ function ExportShareDialog({
         grade: course.grade,
       }));
       return scheduleFormat === "xlsx"
-        ? createCourseScheduleXlsx(courses, includeGrades, generatedAt)
-        : createCourseSchedulePdf(courses, includeGrades, generatedAt);
+        ? exporters.createCourseScheduleXlsx(courses, includeGrades, generatedAt)
+        : exporters.createCourseSchedulePdf(courses, includeGrades, generatedAt);
     }
-    return createPlanProgressChecklistPdf(
+    return exporters.createPlanProgressChecklistPdf(
       dashboard.programs.map((program) => ({
         title: program.profile.programTitle,
         code: program.profile.programCode,
@@ -2401,14 +2447,15 @@ function ExportShareDialog({
     setBusyAction(action);
     setErrorMessage("");
     try {
-      const exported = generateExport();
+      const exporters = await import("@/lib/dashboard-exports");
+      const exported = generateExport(exporters);
       if (action === "download") {
-        downloadGeneratedExport(exported);
+        exporters.downloadGeneratedExport(exported);
         setNotice(exported.filename + " was downloaded.");
         onClose();
         return;
       }
-      const result = await shareGeneratedExport(exported);
+      const result = await exporters.shareGeneratedExport(exported);
       if (result === "cancelled") return;
       setNotice(
         result === "shared"
@@ -3319,13 +3366,34 @@ function ProgressPanel({
     dashboard.programs.length > 0 &&
     dashboard.programs.every((program) =>
       collapsedProgramIds.has(program.profile.id));
-  const trackedProgramAnchors = buildTrackedProgramAnchorRegistry(
-    dashboard.programs.map((program) => ({
-      programPid: program.profile.programPid,
-      programCode: program.profile.programCode,
-      anchorId: "program-progress-" + program.profile.id,
-    })),
+  const trackedProgramAnchors = useMemo(
+    () =>
+      buildTrackedProgramAnchorRegistry(
+        dashboard.programs.map((program) => ({
+          programPid: program.profile.programPid,
+          programCode: program.profile.programCode,
+          anchorId: "program-progress-" + program.profile.id,
+        })),
+      ),
+    [dashboard.programs],
   );
+  const anchorRegistries = useMemo(() => {
+    const registries = new Map<string, RequirementAnchorRegistry>();
+    for (const program of dashboard.programs) {
+      registries.set(
+        program.profile.id,
+        buildRequirementAnchorRegistry(
+          program.profile.programPid,
+          program.requirements.map((requirement) => ({
+            documentId: requirement.id,
+            sourceField: requirement.sourceField,
+            root: requirement.root ?? null,
+          })),
+        ),
+      );
+    }
+    return registries;
+  }, [dashboard.programs]);
 
   function toggleProgram(programId: string) {
     setCollapsedProgramIds((current) => {
@@ -3459,14 +3527,7 @@ function ProgressPanel({
           const requirements = program.requirements.filter((requirement) =>
             filter === "all" ? true : requirement.status !== "met",
           );
-          const anchorRegistry = buildRequirementAnchorRegistry(
-            program.profile.programPid,
-            requirements.map((requirement) => ({
-              documentId: requirement.id,
-              sourceField: requirement.sourceField,
-              root: requirement.root ?? null,
-            })),
-          );
+          const anchorRegistry = anchorRegistries.get(program.profile.id)!;
           const collapsed = collapsedProgramIds.has(program.profile.id);
           const programAnchorId = "program-progress-" + program.profile.id;
           const bodyId = "program-progress-body-" + program.profile.id;
@@ -3532,33 +3593,35 @@ function ProgressPanel({
               </header>
 
               <div id={bodyId} className="program-progress-body" hidden={collapsed}>
-                {program.calendarMismatch ? (
-                  <div className="inline-error" role="alert">
-                    <strong>Calendar reconfirmation required.</strong>
-                    <span>This plan belongs to {program.profile.catalogLabel}.</span>
-                  </div>
-                ) : requirements.length === 0 ? (
-                  <div className="program-requirements-empty">
-                    <span aria-hidden="true">✓</span>
-                    <p>
-                      {filter === "attention"
-                        ? "No requirements in this plan need attention."
-                        : "No structured requirements are available for this plan."}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="requirement-list">
-                    {requirements.map((requirement) => (
-                      <RequirementCard
-                        key={program.profile.id + "-" + requirement.id}
-                        requirement={requirement}
-                        programId={program.profile.id}
-                        anchorRegistry={anchorRegistry}
-                        trackedProgramAnchors={trackedProgramAnchors}
-                        onOverrideNode={setOverrideTarget}
-                      />
-                    ))}
-                  </div>
+                {!collapsed && (
+                  program.calendarMismatch ? (
+                    <div className="inline-error" role="alert">
+                      <strong>Calendar reconfirmation required.</strong>
+                      <span>This plan belongs to {program.profile.catalogLabel}.</span>
+                    </div>
+                  ) : requirements.length === 0 ? (
+                    <div className="program-requirements-empty">
+                      <span aria-hidden="true">✓</span>
+                      <p>
+                        {filter === "attention"
+                          ? "No requirements in this plan need attention."
+                          : "No structured requirements are available for this plan."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="requirement-list">
+                      {requirements.map((requirement) => (
+                        <RequirementCard
+                          key={program.profile.id + "-" + requirement.id}
+                          requirement={requirement}
+                          programId={program.profile.id}
+                          anchorRegistry={anchorRegistry}
+                          trackedProgramAnchors={trackedProgramAnchors}
+                          onOverrideNode={setOverrideTarget}
+                        />
+                      ))}
+                    </div>
+                  )
                 )}
               </div>
             </section>
@@ -4368,26 +4431,38 @@ export function AcademicDashboard({
   initialQuery = "",
   initialCoursePid = "",
   initialProgramPid = "",
+  initialDashboardPayload = null,
+  initialLoadState = "loading",
+  initialLoadError = "",
 }: {
   initialBrowserTab?: "plans" | "courses" | null;
   initialQuery?: string;
   initialCoursePid?: string;
   initialProgramPid?: string;
+  initialDashboardPayload?: unknown;
+  initialLoadState?: DashboardLoadState;
+  initialLoadError?: string;
 }) {
   const [activeTab, setActiveTab] = useState<TabId>(
     initialBrowserTab ? "catalog" : "overview",
   );
-  const [loadState, setLoadState] = useState<
-    "loading" | "ready" | "error" | "guest"
-  >("loading");
+  const [loadState, setLoadState] = useState<DashboardLoadState>(
+    initialDashboardPayload ? "ready" : initialLoadState,
+  );
   const [tabLoadStates, setTabLoadStates] = useState<
     Record<"progress" | "planner", "idle" | "loading" | "ready" | "error">
   >({ progress: "idle", planner: "idle" });
   const [tabLoadErrors, setTabLoadErrors] = useState<
     Record<"progress" | "planner", string>
   >({ progress: "", planner: "" });
-  const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const [dashboard, setDashboard] = useState<DashboardPayload | null>(() =>
+    initialDashboardPayload
+      ? normalizeDashboardPayload(
+          initialDashboardPayload as DashboardPayload | ApiDashboardPayload,
+        )
+      : null
+  );
+  const [loadError, setLoadError] = useState(initialLoadError);
   const [notice, setNotice] = useState("");
   const [exportDialogMode, setExportDialogMode] = useState<ExportDialogMode | null>(null);
   const [busyCourseId, setBusyCourseId] = useState<string | null>(null);
@@ -4400,8 +4475,18 @@ export function AcademicDashboard({
     progress: 0,
     planner: 0,
   });
+  const scopeAbortControllers = useRef<
+    Record<DashboardDataScope, AbortController | null>
+  >({
+    overview: null,
+    progress: null,
+    planner: null,
+  });
 
   const loadDashboardScope = useCallback(async (scope: DashboardDataScope) => {
+    scopeAbortControllers.current[scope]?.abort();
+    const controller = new AbortController();
+    scopeAbortControllers.current[scope] = controller;
     const requestId = ++scopeRequestIds.current[scope];
     if (scope === "overview") {
       setLoadError("");
@@ -4412,6 +4497,7 @@ export function AcademicDashboard({
     try {
       const payload = await requestJson<DashboardPayload | ApiDashboardPayload>(
         "/api/dashboard?tab=" + scope,
+        { signal: controller.signal },
       );
       if (scopeRequestIds.current[scope] !== requestId) return;
       const normalized = normalizeDashboardPayload(payload);
@@ -4423,6 +4509,7 @@ export function AcademicDashboard({
       }
     } catch (error) {
       if (scopeRequestIds.current[scope] !== requestId) return;
+      if (error instanceof DOMException && error.name === "AbortError") return;
       if (error instanceof ApiError && error.status === 401) {
         setLoadState("guest");
         return;
@@ -4437,10 +4524,16 @@ export function AcademicDashboard({
         setTabLoadErrors((current) => ({ ...current, [scope]: message }));
         setTabLoadStates((current) => ({ ...current, [scope]: "error" }));
       }
+    } finally {
+      if (scopeAbortControllers.current[scope] === controller) {
+        scopeAbortControllers.current[scope] = null;
+      }
     }
   }, []);
 
   const reloadOverview = useCallback(async () => {
+    scopeAbortControllers.current.progress?.abort();
+    scopeAbortControllers.current.planner?.abort();
     scopeRequestIds.current.progress += 1;
     scopeRequestIds.current.planner += 1;
     setTabLoadStates({ progress: "idle", planner: "idle" });
@@ -4449,6 +4542,7 @@ export function AcademicDashboard({
   }, [loadDashboardScope]);
 
   const reloadProgress = useCallback(async () => {
+    scopeAbortControllers.current.planner?.abort();
     scopeRequestIds.current.planner += 1;
     setTabLoadStates((current) => ({
       ...current,
@@ -4461,6 +4555,7 @@ export function AcademicDashboard({
   }, [loadDashboardScope]);
 
   const reloadPlanner = useCallback(async () => {
+    scopeAbortControllers.current.progress?.abort();
     scopeRequestIds.current.progress += 1;
     setTabLoadStates((current) => ({
       ...current,
@@ -4469,12 +4564,22 @@ export function AcademicDashboard({
     await loadDashboardScope("planner");
   }, [loadDashboardScope]);
 
+  useEffect(
+    () => () => {
+      for (const controller of Object.values(scopeAbortControllers.current)) {
+        controller?.abort();
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
+    if (initialLoadState !== "loading" || initialDashboardPayload) return;
     const timer = window.setTimeout(() => {
       void loadDashboardScope("overview");
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadDashboardScope]);
+  }, [initialDashboardPayload, initialLoadState, loadDashboardScope]);
 
   useEffect(() => {
     if (
@@ -4505,6 +4610,22 @@ export function AcademicDashboard({
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  function changeActiveTab(nextTab: TabId) {
+    if (
+      nextTab !== activeTab &&
+      (activeTab === "progress" || activeTab === "planner") &&
+      tabLoadStates[activeTab] === "loading"
+    ) {
+      scopeAbortControllers.current[activeTab]?.abort();
+      scopeRequestIds.current[activeTab] += 1;
+      setTabLoadStates((current) => ({
+        ...current,
+        [activeTab]: "idle",
+      }));
+    }
+    setActiveTab(nextTab);
+  }
+
   function openCatalog(
     status: CourseStatus = "completed",
     term = "",
@@ -4513,7 +4634,7 @@ export function AcademicDashboard({
     setCatalogInitialStatus(status);
     setCatalogInitialTerm(term);
     setCatalogInitialQuery(query);
-    setActiveTab("catalog");
+    changeActiveTab("catalog");
     window.requestAnimationFrame(() => {
       document.getElementById("main-content")?.focus({ preventScroll: true });
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4526,12 +4647,20 @@ export function AcademicDashboard({
 
   if (loadState === "guest") {
     return (
-      <GuestAcademicExplorer
-        initialTab={initialBrowserTab ?? "plans"}
-        initialQuery={initialQuery}
-        initialCoursePid={initialCoursePid}
-        initialProgramPid={initialProgramPid}
-      />
+      <Suspense
+        fallback={
+          <div className="app-page">
+            <main id="main-content"><AppLoading /></main>
+          </div>
+        }
+      >
+        <GuestAcademicExplorer
+          initialTab={initialBrowserTab ?? "plans"}
+          initialQuery={initialQuery}
+          initialCoursePid={initialCoursePid}
+          initialProgramPid={initialProgramPid}
+        />
+      </Suspense>
     );
   }
 
@@ -4539,7 +4668,7 @@ export function AcademicDashboard({
     <div className="app-page">
       <DashboardHeader
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={changeActiveTab}
         user={dashboard?.user}
         showTabs={showTabs}
       />
@@ -4602,12 +4731,14 @@ export function AcademicDashboard({
             )}
             {activeTab === "progress" &&
               tabLoadStates.progress === "ready" && (
-              <ProgressPanel
-                dashboard={dashboard}
-                onExport={() => setExportDialogMode("progress")}
-                onReload={reloadProgress}
-                setNotice={setNotice}
-              />
+              <Suspense fallback={<DeferredTabLoading label="Progress details" />}>
+                <ProgressPanel
+                  dashboard={dashboard}
+                  onExport={() => setExportDialogMode("progress")}
+                  onReload={reloadProgress}
+                  setNotice={setNotice}
+                />
+              </Suspense>
             )}
             {activeTab === "progress" &&
               (tabLoadStates.progress === "idle" ||
@@ -4650,29 +4781,31 @@ export function AcademicDashboard({
               />
             )}
             {activeTab === "catalog" && (
-              <CatalogPanel
-                key={
-                  catalogInitialStatus +
-                  "-" +
-                  catalogInitialTerm +
-                  "-" +
-                  catalogInitialQuery
-                }
-                dashboard={dashboard}
-                initialQuery={catalogInitialQuery}
-                initialBrowserTab={initialBrowserTab ?? "courses"}
-                initialCoursePid={initialCoursePid}
-                initialProgramPid={initialProgramPid}
-                initialTerm={catalogInitialTerm}
-                initialStatus={catalogInitialStatus}
-                onAdded={reloadOverview}
-                setNotice={setNotice}
-              />
+              <Suspense fallback={<DeferredTabLoading label="Browse" />}>
+                <CatalogPanel
+                  key={
+                    catalogInitialStatus +
+                    "-" +
+                    catalogInitialTerm +
+                    "-" +
+                    catalogInitialQuery
+                  }
+                  dashboard={dashboard}
+                  initialQuery={catalogInitialQuery}
+                  initialBrowserTab={initialBrowserTab ?? "courses"}
+                  initialCoursePid={initialCoursePid}
+                  initialProgramPid={initialProgramPid}
+                  initialTerm={catalogInitialTerm}
+                  initialStatus={catalogInitialStatus}
+                  onAdded={reloadOverview}
+                  setNotice={setNotice}
+                />
+              </Suspense>
             )}
           </main>
           <DashboardTabs
             activeTab={activeTab}
-            onChange={setActiveTab}
+            onChange={changeActiveTab}
             className="mobile-dashboard-nav"
           />
           {exportDialogMode && (
